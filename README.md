@@ -41,3 +41,10 @@ npm run build    # static build in dist/
 - [Architecture](docs/architecture.md)
 - [Rendering approaches](docs/rendering-approaches.md)
 - [Roadmap](docs/roadmap.md)
+
+## Deployment
+
+Deployed on Vercel from the `main` branch (Git integration): every push to `main`
+updates production, other branches get preview URLs. Vercel auto-detects Vite
+(`npm run build` → `dist/`); no `vercel.json` is needed because the app is a single
+page and its state lives in the URL hash.

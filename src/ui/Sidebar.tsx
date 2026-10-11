@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { type SolidKind, type SolidSpec, SOLID_KINDS, defaultSpec, isRevolution } from '../geometry/solids'
 import { type DictKey, LANGS, useT } from '../i18n'
 import { shareUrl } from '../persist/persist'
@@ -14,9 +14,9 @@ import { ConstructionForm, type FormKind } from './forms'
 import { ToolIcon } from './ToolIcon'
 
 const FORMS_3D: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
-const FORMS_2D: FormKind[] = ['segment', 'intersection', 'ratio']
+const FORMS_2D: FormKind[] = ['coords', 'segment', 'intersection', 'ratio']
 const FORMS_ROUND: FormKind[] = ['segment', 'intersection', 'plane', 'ratio']
-const TYPES: ItemType[] = ['point', 'segment', 'line', 'vector', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio']
+const TYPES: ItemType[] = ['point', 'segment', 'line', 'vector', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio', 'measure', 'text']
 const MODES: DisplayMode[] = ['all', 'focus', 'selected']
 
 export function Sidebar() {
@@ -161,10 +161,12 @@ function ToolsPanel() {
   const tabs = GROUPS.filter((g) => g !== 'basic' && available(g).length > 0)
   const toolGroup = toolById(tool).group
   const [tab, setTab] = useState<ToolGroup>(toolGroup !== 'basic' ? toolGroup : 'construct')
-  // Follow the active tool when it is chosen elsewhere (keyboard shortcuts).
-  useEffect(() => {
+  // Follow the active tool when it changes (e.g. keyboard shortcuts): adjust state during render.
+  const [seenGroup, setSeenGroup] = useState(toolGroup)
+  if (seenGroup !== toolGroup) {
+    setSeenGroup(toolGroup)
     if (toolGroup !== 'basic') setTab(toolGroup)
-  }, [toolGroup])
+  }
   const shown = tabs.includes(tab) ? tab : tabs[0]
 
   const pickName = (p: (typeof picks)[number]) =>
@@ -228,8 +230,14 @@ function ToolsPanel() {
         )}
       </div>
 
-      {(tool === 'circleCR' || tool === 'ratio' || tool === 'ticks' || tool === 'rotate' || tool === 'dilate') && (
+      {(tool === 'circleCR' || tool === 'ratio' || tool === 'ticks' || tool === 'rotate' || tool === 'dilate' || tool === 'text') && (
         <div className="tool-options">
+          {tool === 'text' && (
+            <label className="opt">
+              {t('opt.text')}
+              <input value={opts.text} placeholder={t('note.default')} onChange={(e) => st.setOpts({ text: e.target.value })} />
+            </label>
+          )}
           {tool === 'rotate' && (
             <label className="opt">
               {t('opt.angle')}
@@ -348,10 +356,19 @@ function ElementsPanel() {
                     />
                   )}
                   {short && <span className="item-name">{short}</span>}
-                  <span className="item-desc" title={names.describe(it)}>
-                    {names.describe(it)}
-                    {bad && <em className="bad"> — {t('invalid')}</em>}
-                  </span>
+                  {it.type === 'text' ? (
+                    <input className="item-text" value={it.text} onClick={(e) => e.stopPropagation()} onChange={(e) => updateItem(it.id, { text: e.target.value })} />
+                  ) : (
+                    <span className="item-desc" title={names.describe(it)}>
+                      {names.describe(it)}
+                      {bad && <em className="bad"> — {t('invalid')}</em>}
+                    </span>
+                  )}
+                  {it.type === 'point' && (
+                    <button className={`mini ${it.showCoords ? 'on' : ''}`} title={t('showCoords')} onClick={stop(() => updateItem(it.id, { showCoords: !it.showCoords }))}>
+                      xy
+                    </button>
+                  )}
                   {(it.type === 'segment' || it.type === 'line') && (
                     <button className={`mini ${it.aux ? 'on' : ''}`} title={t('form.aux')} onClick={stop(() => updateItem(it.id, { aux: !it.aux }))}>
                       aux
@@ -413,6 +430,7 @@ function DisplayPanel() {
   const showGrid = useStore((s) => s.showGrid)
   const snapGrid = useStore((s) => s.snapGrid)
   const dashedHidden = useStore((s) => s.dashedHidden)
+  const showAxes = useStore((s) => s.showAxes)
   const sheet = useStore((s) => !s.doc.solid)
   const toggle = useStore((s) => s.toggle)
   return (
@@ -430,10 +448,16 @@ function DisplayPanel() {
         {t('grid')}
       </label>
       {sheet ? (
-        <label className="check">
-          <input type="checkbox" checked={snapGrid} onChange={() => toggle('snapGrid')} />
-          {t('snapGrid')}
-        </label>
+        <>
+          <label className="check">
+            <input type="checkbox" checked={snapGrid} onChange={() => toggle('snapGrid')} />
+            {t('snapGrid')}
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={showAxes} onChange={() => toggle('showAxes')} />
+            {t('showAxes')}
+          </label>
+        </>
       ) : (
         <label className="check">
           <input type="checkbox" checked={dashedHidden} onChange={() => toggle('dashedHidden')} />

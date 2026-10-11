@@ -11,25 +11,25 @@ const ref = (l: string) => [...ev().labels.entries()].find(([, v]) => v === l)![
 const pos = (l: string) => ev().points.get(ref(l))!
 const at = (x: number, y: number) => st().hit({ kind: 'empty', pos: [x, y, 0] })
 const pt = (l: string) => st().hit({ kind: 'point', ref: ref(l) })
-const use = (t: Tool) => st().setTool(t)
+const pick = (t: Tool) => st().setTool(t)
 const close = (a: Vec3, b: Vec3) => expect(dist(a, b)).toBeCloseTo(0, 9)
 
 /** Triangle ABC (polygon) and a point O on the sheet. */
 beforeEach(() => {
   useStore.setState({ doc: { solid: null, items: [] }, picks: [], message: null, opts: { ...st().opts, angle: 90, k: 2 } })
-  use('polygon')
+  pick('polygon')
   at(1, 0)
   at(3, 0)
   at(1, 2)
   pt('A')
-  use('point')
+  pick('point')
   at(0, 0)
 })
 const triangle = () => items('polygon')[0].id
 
 describe('transformations on the sheet', () => {
   it('point symmetry of a polygon gives A′B′C′ with primes', () => {
-    use('reflectPoint')
+    pick('reflectPoint')
     st().hit({ kind: 'polygon', ref: triangle() })
     pt('D')
     close(pos('A′'), [-1, 0, 0])
@@ -39,34 +39,34 @@ describe('transformations on the sheet', () => {
   })
 
   it('line symmetry about the side AB', () => {
-    use('reflectLine')
+    pick('reflectLine')
     pt('C')
     st().hit({ kind: 'line', ref: `${ref('A')}|${ref('B')}`, t: 0.5, bounded: true })
     close(pos('C′'), [1, -2, 0])
   })
 
   it('rotation by 90° about D', () => {
-    use('rotate')
+    pick('rotate')
     pt('B')
     pt('D')
     close(pos('B′'), [0, 3, 0])
   })
 
   it('translation by a vector', () => {
-    use('vector')
+    pick('vector')
     pt('D')
     pt('A')
-    use('translate')
+    pick('translate')
     pt('C')
     st().hit({ kind: 'vector', ref: items('vector')[0].id })
     close(pos('C′'), [2, 2, 0])
   })
 
   it('homothety with k = 2 maps a circle to a circle of double radius', () => {
-    use('circleCR')
+    pick('circleCR')
     st().setOpts({ radius: 1 })
     pt('B')
-    use('dilate')
+    pick('dilate')
     st().hit({ kind: 'circle', ref: items('circle')[0].id, angle: 0 })
     pt('D')
     const img = ev().circles.get(items('circle')[1].id)!
@@ -75,10 +75,10 @@ describe('transformations on the sheet', () => {
   })
 
   it('image of a segment keeps it a segment between image points', () => {
-    use('segment')
+    pick('segment')
     pt('A')
     pt('C')
-    use('reflectPoint')
+    pick('reflectPoint')
     st().hit({ kind: 'line', ref: items('segment')[0].id, t: 0.5, bounded: true })
     pt('B')
     expect(items('segment')).toHaveLength(2)
@@ -88,10 +88,10 @@ describe('transformations on the sheet', () => {
 
 describe('labels of repeated images', () => {
   it('a second image of A is A″', () => {
-    use('reflectPoint')
+    pick('reflectPoint')
     pt('A')
     pt('D')
-    use('dilate')
+    pick('dilate')
     pt('A')
     pt('D')
     expect(ev().points.has(ref('A″'))).toBe(true)
@@ -101,17 +101,17 @@ describe('labels of repeated images', () => {
 describe('transformations in space', () => {
   it('half-turn of a cube vertex about the axis through the centres of two faces', () => {
     useStore.setState({ doc: { solid: { kind: 'cube', a: 2 }, items: [] }, picks: [], message: null })
-    use('line')
+    pick('line')
     st().hit({ kind: 'empty', pos: null })
     // Axis: the vertical line through the centre (points on the bottom and top faces).
     st().setTool('point')
     st().hit({ kind: 'face', face: 0, pos: [0, 0, -1] })
     st().hit({ kind: 'face', face: 1, pos: [0, 0, 1] })
     const [p, q] = st().doc.items.map((i) => i.id)
-    use('line')
+    pick('line')
     st().hit({ kind: 'point', ref: p })
     st().hit({ kind: 'point', ref: q })
-    use('reflectLine')
+    pick('reflectLine')
     st().hit({ kind: 'point', ref: 'v0' })
     st().hit({ kind: 'line', ref: items('line')[0].id, t: 0, bounded: false })
     // A goes to the opposite vertex of the bottom face (C), which already exists.

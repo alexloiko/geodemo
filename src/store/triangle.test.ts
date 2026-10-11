@@ -12,12 +12,12 @@ const ref = (l: string) => [...ev().labels.entries()].find(([, v]) => v === l)![
 const pos = (l: string) => ev().points.get(ref(l))!
 const at = (x: number, y: number) => st().hit({ kind: 'empty', pos: [x, y, 0] })
 const pt = (l: string) => st().hit({ kind: 'point', ref: ref(l) })
-const use = (t: Tool) => st().setTool(t)
+const pick = (t: Tool) => st().setTool(t)
 
 /** Triangle ABC on the sheet. */
 function triangle(a: Vec3, b: Vec3, c: Vec3) {
   useStore.setState({ doc: { solid: null, items: [] }, picks: [], message: null })
-  use('polygon')
+  pick('polygon')
   at(a[0], a[1])
   at(b[0], b[1])
   at(c[0], c[1])
@@ -28,7 +28,7 @@ describe('triangle tools on the sheet', () => {
   beforeEach(() => triangle([0, 0, 0], [6, 0, 0], [1, 4, 0]))
 
   it('median from C: midpoint M of AB, segment, ticks', () => {
-    use('median')
+    pick('median')
     pt('C')
     pt('A')
     pt('B')
@@ -38,7 +38,7 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('altitude from C: foot H on AB, right angle', () => {
-    use('altitude')
+    pick('altitude')
     pt('C')
     pt('A')
     pt('B')
@@ -47,7 +47,7 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('bisector from A splits BC in the ratio AB : AC', () => {
-    use('triBisector')
+    pick('triBisector')
     pt('A')
     pt('B')
     pt('C')
@@ -56,7 +56,7 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('midline from A joins the midpoints of AB and AC', () => {
-    use('midline')
+    pick('midline')
     pt('A')
     pt('B')
     pt('C')
@@ -65,7 +65,7 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('incircle touches all sides', () => {
-    use('incircle')
+    pick('incircle')
     pt('A')
     pt('B')
     pt('C')
@@ -81,7 +81,7 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('centroid G with three auxiliary medians', () => {
-    use('centroid')
+    pick('centroid')
     pt('A')
     pt('B')
     pt('C')
@@ -90,7 +90,7 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('orthocentre H: CH ⟂ AB and AH ⟂ BC', () => {
-    use('orthocenter')
+    pick('orthocenter')
     pt('A')
     pt('B')
     pt('C')
@@ -100,11 +100,11 @@ describe('triangle tools on the sheet', () => {
   })
 
   it('centre of a circumcircle', () => {
-    use('circle3')
+    pick('circle3')
     pt('A')
     pt('B')
     pt('C')
-    use('center')
+    pick('center')
     st().hit({ kind: 'circle', ref: items('circle')[0].id, angle: 0 })
     const o = pos('O')
     expect(dist(o, pos('A'))).toBeCloseTo(dist(o, pos('B')), 9)
@@ -116,7 +116,7 @@ describe('obtuse triangle', () => {
   beforeEach(() => triangle([0, 0, 0], [4, 0, 0], [6, 3, 0]))
 
   it('altitude from C falls outside AB: the side is extended with a dashed segment', () => {
-    use('altitude')
+    pick('altitude')
     pt('C')
     pt('A')
     pt('B')
@@ -128,7 +128,7 @@ describe('obtuse triangle', () => {
 describe('triangle tools on a solid face', () => {
   it('altitude of the lateral face SAB of a pyramid lands on AB', () => {
     useStore.setState({ doc: { solid: { kind: 'pyramid', n: 4, side: 4, height: 5, apex: 'center' }, items: [] }, picks: [] })
-    use('altitude')
+    pick('altitude')
     st().hit({ kind: 'point', ref: 'v4' }) // S
     st().hit({ kind: 'point', ref: 'v0' })
     st().hit({ kind: 'point', ref: 'v1' })

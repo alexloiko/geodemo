@@ -25,17 +25,25 @@ npm run build    # static build in dist/
   truncated cone, sphere (base circles are clickable circles, points can be put on the curved
   surface, sections are exact at the base circles). Changing the type clears the construction.
 - **Tools** work by clicking, the hint shows what to click next. In a *point* step a click on a
-  line, circle, face or (on the sheet) empty space creates the point there.
+  line, circle, face, curved surface or (on the sheet) empty space creates the point there.
+  The basic tools are always visible; the other groups are tabs:
   - *Basic*: Select, Point, Segment, Line, Ray, Polygon.
   - *Construct*: Midpoint, Perpendicular (from a point off the line → foot H; through a point on
     the line → in the working plane), Parallel, Perpendicular bisector, Angle bisector, Intersect
     (any two lines / segments / edges / circles).
+  - *Triangle* (vertex first, then the other two): median, altitude, bisector, midline, incircle,
+    centroid, orthocentre; centre of a circle.
   - *Circles*: centre + point, three points, centre + radius, tangents from a point.
-  - *Marks*: angle (with degrees), ratio arc, equal-segment ticks. Constructions add the usual
-    marks themselves (right-angle squares, ticks, equal-angle arcs).
-  - *Solid*: plane through 3 points (section built automatically), face highlight.
+  - *Transform*: point and line symmetry, rotation, translation by a vector, homothety; images
+    keep their structure and get primed labels (A′, A″).
+  - *Marks & measures*: angle (with degrees), ratio arc, equal-segment ticks, vector, vector sum,
+    length, area, text notes. Constructions add the usual marks themselves.
+  - *Space* (solids): plane through 3 points (section built automatically), face highlight, trace
+    of a line on a plane, intersection of planes, parallel plane, perpendicular to a plane,
+    line–plane angle, plane perpendicular to a line.
   - Keys 1–9: Select, Point, Segment, Line, Polygon, Perpendicular, Parallel, Circle, Intersect;
     Enter closes a polygon, Esc cancels.
+- **Sheet extras**: coordinate axes, point by coordinates, coordinates in labels (`xy` in the list).
 - **Working plane** (solids): planar constructions use the face/section that contains the
   clicked points; when several fit, the board asks which one. It can also be fixed in the sidebar.
 - **Exact construction** forms: point on an edge with a ratio m : n (optionally adds

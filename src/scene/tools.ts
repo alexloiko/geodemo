@@ -69,9 +69,13 @@ export type ToolId =
   | 'translate'
   | 'dilate'
   | 'vector'
+  | 'vectorSum'
+  | 'length'
+  | 'area'
+  | 'text'
 
 /** What a tool expects to be clicked next. `curve` = line or circle. */
-export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face' | 'plane' | 'object' | 'vector'
+export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face' | 'plane' | 'object' | 'vector' | 'polygon' | 'spot'
 
 export type Pick =
   | { kind: 'point'; ref: PointRef }
@@ -89,13 +93,23 @@ export interface ToolOptions {
   angle: number
   /** Homothety coefficient. */
   k: number
+  /** Text of a new note. */
+  text: string
   ratioText: string
   ticks: number
   /** Plane for planar constructions on solids; 'auto' picks the face that contains the input. */
   workingPlane: PlaneRef | 'auto'
 }
 
-export const DEFAULT_OPTIONS: ToolOptions = { radius: 3, angle: 90, k: 2, ratioText: 'x', ticks: 1, workingPlane: 'auto' }
+export const DEFAULT_OPTIONS: ToolOptions = {
+  radius: 3,
+  angle: 90,
+  k: 2,
+  text: '',
+  ratioText: 'x',
+  ticks: 1,
+  workingPlane: 'auto',
+}
 
 export interface BuildCtx {
   doc: Doc
@@ -775,6 +789,53 @@ TOOLS.push(
       items: [{ id: newId('v'), type: 'vector', a: refOf(a), b: refOf(b), color: DEFAULT_COLOR.vector, visible: true }],
     }),
   },
+)
+
+// ---------------------------------------------------------------------------
+// vectors, measurements, notes
+
+TOOLS.push(
+  {
+    id: 'vectorSum',
+    group: 'measure',
+    slots: ['vector', 'vector'],
+    build: (ctx, [p1, p2]) => {
+      const [v1, v2] = [refOf(p1), refOf(p2)].map((id) => ctx.doc.items.find((i) => i.id === id))
+      if (v1?.type !== 'vector' || v2?.type !== 'vector') return { error: 'err.generic' }
+      const items: Item[] = []
+      const vec = (a: PointRef, b: PointRef, color: string, aux = false): Item => ({
+        id: newId('v'), type: 'vector', a, b, aux, color, visible: true,
+      })
+      // Triangle rule: the second vector is copied (dashed) to the head of the first.
+      let end: PointRef
+      if (v2.a === v1.b) end = v2.b
+      else {
+        const e = pointFactory(ctx)({ kind: 'image', src: v1.b, tf: { kind: 'translate', vector: v2.id } })
+        items.push(e, vec(v1.b, e.id, AUX_COLOR, true))
+        end = e.id
+      }
+      items.push(vec(v1.a, end, DEFAULT_COLOR.angle))
+      return { items }
+    },
+  },
+  {
+    id: 'length',
+    group: 'measure',
+    slots: ['point', 'point'],
+    build: (_ctx, [a, b]) => ({
+      items: [{ id: newId('ms'), type: 'measure', def: { kind: 'length', a: refOf(a), b: refOf(b) }, color: DEFAULT_COLOR.measure, visible: true }],
+    }),
+  },
+  {
+    id: 'area',
+    group: 'measure',
+    slots: ['polygon'],
+    build: (_ctx, [p]) => ({
+      items: [{ id: newId('ms'), type: 'measure', def: { kind: 'area', polygon: refOf(p) }, color: DEFAULT_COLOR.measure, visible: true }],
+    }),
+  },
+  // Notes are created directly by the store on a click (slot `spot`).
+  { id: 'text', group: 'measure', slots: ['spot'] },
 )
 
 export const toolById = (id: ToolId): ToolDef => TOOLS.find((t) => t.id === id)!

@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { intersectLines, planeFrom3 } from '../geometry/plane'
 import { useT } from '../i18n'
-import { makeIntersection, makePlane, makePointOnSegment, makeRatioMarks } from '../scene/build'
+import { makeIntersection, makePlane, makePointOnSegment, makeRatioMarks, usedLabels } from '../scene/build'
 import { evaluate, solidEdges } from '../scene/evaluate'
-import { prettyLabel } from '../scene/labels'
+import { nextLabel, prettyLabel } from '../scene/labels'
 import { DEFAULT_COLOR, type Item, type PointRef, newId } from '../scene/model'
 import { useStore } from '../store/store'
 
-export type FormKind = 'pointOnEdge' | 'segment' | 'intersection' | 'plane' | 'face' | 'ratio'
+export type FormKind = 'pointOnEdge' | 'segment' | 'intersection' | 'plane' | 'face' | 'ratio' | 'coords'
 
 function useScene() {
   const doc = useStore((s) => s.doc)
@@ -57,7 +57,53 @@ export function ConstructionForm({ kind, onClose }: { kind: FormKind; onClose: (
       return <FaceForm onClose={onClose} />
     case 'ratio':
       return <RatioForm onClose={onClose} />
+    case 'coords':
+      return <CoordsForm onClose={onClose} />
   }
+}
+
+/** Point by coordinates on the sheet. */
+function CoordsForm({ onClose }: { onClose: () => void }) {
+  const t = useT()
+  const { doc } = useScene()
+  const addItems = useStore((s) => s.addItems)
+  const [x, setX] = useState('0')
+  const [y, setY] = useState('0')
+  const [label, setLabel] = useState('')
+  const ok = Number.isFinite(Number(x)) && Number.isFinite(Number(y)) && x.trim() !== '' && y.trim() !== ''
+  const add = () => {
+    addItems([
+      {
+        id: newId('p'),
+        type: 'point',
+        label: label.trim() || nextLabel(usedLabels(doc), { fromA: true }),
+        color: DEFAULT_COLOR.point,
+        visible: true,
+        showCoords: true,
+        def: { kind: 'free', pos: [Number(x), Number(y), 0], plane: 'sheet' },
+      },
+    ])
+    onClose()
+  }
+  return (
+    <div className="form">
+      <div className="row">
+        <label>
+          x
+          <input value={x} inputMode="decimal" onChange={(e) => setX(e.target.value.replace(',', '.'))} />
+        </label>
+        <label>
+          y
+          <input value={y} inputMode="decimal" onChange={(e) => setY(e.target.value.replace(',', '.'))} />
+        </label>
+      </div>
+      <label>
+        {t('form.label')}
+        <input value={label} placeholder="A" onChange={(e) => setLabel(e.target.value)} />
+      </label>
+      <Actions onAdd={add} onClose={onClose} disabled={!ok} />
+    </div>
+  )
 }
 
 function PointOnEdgeForm({ onClose }: { onClose: () => void }) {

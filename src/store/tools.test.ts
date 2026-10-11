@@ -15,7 +15,7 @@ const pos = (l: string) => ev().points.get(ptByLabel(l))!
 /** Click on the empty sheet at (x, y). */
 const at = (x: number, y: number) => st().hit({ kind: 'empty', pos: [x, y, 0] })
 const point = (label: string) => st().hit({ kind: 'point', ref: ptByLabel(label) })
-const use = (t: Tool) => st().setTool(t)
+const pick = (t: Tool) => st().setTool(t)
 
 function sheet() {
   useStore.setState({ doc: { solid: null, items: [] }, past: [], future: [], picks: [], message: null, planeChoice: null })
@@ -25,7 +25,7 @@ describe('tools on the 2D sheet', () => {
   beforeEach(sheet)
 
   it('segment by two clicks creates two points A, B and a segment', () => {
-    use('segment')
+    pick('segment')
     at(0, 0)
     at(4, 0)
     expect(items('point').map((p) => (p.type === 'point' ? p.label : ''))).toEqual(['A', 'B'])
@@ -33,12 +33,12 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('perpendicular from an outside point creates the foot H and a right-angle mark', () => {
-    use('segment')
+    pick('segment')
     at(0, 0)
     at(6, 0)
-    use('point')
+    pick('point')
     at(2, 3)
-    use('perpendicular')
+    pick('perpendicular')
     point('C')
     st().hit({ kind: 'line', ref: items('segment')[0].id, t: 0.5, bounded: true })
     const h = pos('H')
@@ -48,11 +48,11 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('perpendicular through a point on the line is perpendicular in the sheet', () => {
-    use('segment')
+    pick('segment')
     at(0, 0)
     at(6, 2)
     const seg = items('segment')[0].id
-    use('perpendicular')
+    pick('perpendicular')
     st().hit({ kind: 'line', ref: seg, t: 0.5, bounded: true }) // creates a point on the segment
     st().hit({ kind: 'line', ref: seg, t: 0.5, bounded: true })
     const line = items('line')[0]
@@ -62,7 +62,7 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('perpendicular bisector adds midpoint M, ticks and a right angle', () => {
-    use('perpBisector')
+    pick('perpBisector')
     at(0, 0)
     at(4, 2)
     expect(pos('M')).toEqual([2, 1, 0])
@@ -73,7 +73,7 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('angle bisector halves the angle', () => {
-    use('angleBisector')
+    pick('angleBisector')
     at(4, 0)
     at(0, 0)
     at(1, 3)
@@ -83,16 +83,16 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('circle through 3 points, then intersect it with a line → 2 points', () => {
-    use('circle3')
+    pick('circle3')
     at(0, 0)
     at(4, 0)
     at(0, 4)
     const circle = items('circle')[0].id
-    use('line')
+    pick('line')
     at(-5, 1)
     at(5, 1)
     const line = items('line')[0].id
-    use('intersect')
+    pick('intersect')
     st().hit({ kind: 'line', ref: line, t: 0.5, bounded: false })
     st().hit({ kind: 'circle', ref: circle, angle: 0 })
     const c = ev().circles.get(circle)!
@@ -102,10 +102,10 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('tangents from an outside point touch the circle', () => {
-    use('circleCR')
+    pick('circleCR')
     st().setOpts({ radius: 2 })
     at(0, 0)
-    use('tangent')
+    pick('tangent')
     at(5, 0)
     st().hit({ kind: 'circle', ref: items('circle')[0].id, angle: 0 })
     const touch = st().doc.items.filter((i) => i.type === 'point' && i.def.kind === 'tangency')
@@ -117,17 +117,17 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('point on a circle via a click on the circle', () => {
-    use('circleCR')
+    pick('circleCR')
     st().setOpts({ radius: 3 })
     at(0, 0)
-    use('point')
+    pick('point')
     st().hit({ kind: 'circle', ref: items('circle')[0].id, angle: Math.PI / 2 })
     const p = items('point').at(-1)!
     expect(ev().points.get(p.id)![1]).toBeCloseTo(3, 9)
   })
 
   it('polygon closes when the first vertex is clicked again', () => {
-    use('polygon')
+    pick('polygon')
     at(0, 0)
     at(4, 0)
     at(2, 3)
@@ -136,13 +136,13 @@ describe('tools on the 2D sheet', () => {
   })
 
   it('reports an error when objects do not intersect', () => {
-    use('circleCR')
+    pick('circleCR')
     st().setOpts({ radius: 1 })
     at(0, 0)
-    use('line')
+    pick('line')
     at(-5, 4)
     at(5, 4)
-    use('intersect')
+    pick('intersect')
     st().hit({ kind: 'line', ref: items('line')[0].id, t: 0, bounded: false })
     st().hit({ kind: 'circle', ref: items('circle')[0].id, angle: 0 })
     expect(st().message).toBe('err.noIntersection')
@@ -161,7 +161,7 @@ describe('planar tools on a solid', () => {
   })
 
   it('perpendicular bisector of an edge asks which face, then builds in it', () => {
-    use('perpBisector')
+    pick('perpBisector')
     st().hit({ kind: 'point', ref: 'v0' })
     st().hit({ kind: 'point', ref: 'v1' })
     const choice = st().planeChoice!
@@ -178,7 +178,7 @@ describe('planar tools on a solid', () => {
   })
 
   it('perpendicular from a vertex to an edge in the same face needs no choice', () => {
-    use('perpendicular')
+    pick('perpendicular')
     st().hit({ kind: 'point', ref: 'v2' })
     st().hit({ kind: 'line', ref: 'v0|v1', t: 0.5, bounded: true })
     expect(st().planeChoice).toBeNull()
@@ -186,7 +186,7 @@ describe('planar tools on a solid', () => {
   })
 
   it('a click on a face creates a free point in that face', () => {
-    use('point')
+    pick('point')
     st().hit({ kind: 'face', face: 0, pos: [0, 0, -2] })
     const p = items('point')[0]
     expect(p.type === 'point' && p.def.kind === 'free' && p.def.plane).toBe('f0')

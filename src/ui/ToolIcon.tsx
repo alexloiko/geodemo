@@ -266,4 +266,34 @@ const ICONS: Record<ToolId, React.ReactNode> = {
       {dot(4, 19)}
     </>
   ),
+  vectorSum: (
+    <>
+      <path d="M3 19l9-10M12 9l9 4" />
+      <path d="M3 19l18-6" strokeWidth={2.2} />
+      <path d="M21 13l-5.5-.3M21 13l-4 3.5" />
+    </>
+  ),
+  length: (
+    <>
+      <path d="M3 15h18" />
+      <path d="M3 12v6M21 12v6" />
+      <path d="M8 9h8" strokeWidth={1.3} />
+      <text x={12} y={8} fontSize={7} textAnchor="middle" stroke="none" fill="currentColor">
+        5
+      </text>
+    </>
+  ),
+  area: (
+    <>
+      <path d="M4 18L8 6l12 3-2 9z" fill="currentColor" fillOpacity={0.2} />
+      <text x={12} y={15.5} fontSize={8} textAnchor="middle" stroke="none" fill="currentColor">
+        S
+      </text>
+    </>
+  ),
+  text: (
+    <text x={12} y={18} fontSize={16} textAnchor="middle" stroke="none" fill="currentColor" fontFamily="serif">
+      T
+    </text>
+  ),
 }

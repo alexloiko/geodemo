@@ -36,6 +36,7 @@ import {
   type Doc,
   type LineItem,
   type LineRef,
+  type MeasureDef,
   type PlaneDef,
   type PlaneRef,
   type PointItem,
@@ -76,6 +77,8 @@ export interface Evaluated {
   circles: Map<string, Circle3>
   /** Vector items: [tail, head]. */
   vectors: Map<string, [Vec3, Vec3]>
+  /** Measurement items: value and the anchor where it is shown. */
+  measures: Map<string, { value: number; at: Vec3; along?: [Vec3, Vec3] }>
   /** Items whose geometry could not be computed (e.g. skew lines). */
   invalid: Set<string>
   /** Typical size of the scene, for tolerances. */
@@ -96,6 +99,7 @@ export function evaluate(doc: Doc): Evaluated {
     lines: new Map(),
     circles: new Map(),
     vectors: new Map(),
+    measures: new Map(),
     invalid: new Set(),
     scaleRef,
     tol: 1e-6 * scaleRef,
@@ -172,6 +176,15 @@ export function evaluate(doc: Doc): Evaluated {
         else ok = false
         break
       }
+      case 'measure': {
+        const v = measureValue(it.def, ev, doc)
+        if (v) ev.measures.set(it.id, v)
+        else ok = false
+        break
+      }
+      case 'text':
+        ok = true
+        break
       case 'mark':
         ok = true
         break
@@ -191,6 +204,26 @@ export function evaluate(doc: Doc): Evaluated {
       pl.section = pl.section.map((v, i) => (pl.refs[i] ? { ...v, pos: ev.points.get(pl.refs[i]!)! } : v))
   }
   return ev
+}
+
+/** Polygon area (also for planar polygons in space) via the vector area. */
+export function polygonArea(pts: Vec3[]): number {
+  let s: Vec3 = [0, 0, 0]
+  for (let i = 0; i < pts.length; i++) s = add(s, cross(pts[i], pts[(i + 1) % pts.length]))
+  return len(s) / 2
+}
+
+function measureValue(d: MeasureDef, ev: Evaluated, doc: Doc): { value: number; at: Vec3; along?: [Vec3, Vec3] } | null {
+  if (d.kind === 'length') {
+    const [a, b] = [ev.points.get(d.a), ev.points.get(d.b)]
+    return a && b ? { value: dist(a, b), at: lerp(a, b, 0.5), along: [a, b] } : null
+  }
+  const poly = doc.items.find((i) => i.id === d.polygon)
+  if (poly?.type !== 'polygon') return null
+  const pts = poly.pts.map((r) => ev.points.get(r))
+  if (pts.some((p) => !p)) return null
+  const ps = pts as Vec3[]
+  return { value: polygonArea(ps), at: scale(ps.reduce((s, p) => add(s, p), [0, 0, 0] as Vec3), 1 / ps.length) }
 }
 
 /** Resolve a transformation's refs; null when something is missing. */

@@ -215,6 +215,15 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
         return `${pair(it.a, it.b)} = ${it.text}`
       case 'vector':
         return vector(it.id)
+      case 'measure': {
+        const v = ev.measures.get(it.id)?.value
+        const val = v === undefined ? '' : ` = ${Math.round(v * 100) / 100}`
+        if (it.def.kind === 'length') return `${pair(it.def.a, it.def.b)}${val}`
+        const poly = byId.get(it.def.polygon)
+        return `S(${poly?.type === 'polygon' ? poly.pts.map(point).join('') : '?'})${val}`
+      }
+      case 'text':
+        return it.text
     }
     return ''
   }

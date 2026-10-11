@@ -253,6 +253,23 @@ export const en = {
   "tf.rotate": "rotated about {c} by {a}°",
   "tf.translate": "translated by {v}",
   "tf.dilate": "homothety ({c}, k = {k})",
+  "tool.vectorSum": "Vector sum",
+  "tool.length": "Length",
+  "tool.area": "Area",
+  "tool.text": "Note",
+  "hint.vectorSum": "Click two vectors: their sum by the triangle rule.",
+  "hint.length": "Click two points: the length is shown on the drawing and follows the points.",
+  "hint.area": "Click a polygon: its area.",
+  "hint.text": "Type the text below, then click where the note goes. Drag notes with Select.",
+  "need.polygon": "Click a polygon.",
+  "need.spot": "Click where the note goes.",
+  "opt.text": "Text",
+  "note.default": "Note",
+  "form.coords": "Point (x; y)",
+  "showAxes": "Coordinate axes",
+  "showCoords": "Show coordinates",
+  "type.measure": "Measurements",
+  "type.text": "Notes",
 }
 
 export type Dict = typeof en

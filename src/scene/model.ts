@@ -127,6 +127,8 @@ export interface PointItem extends Base {
   type: 'point'
   label: string
   def: PointDef
+  /** Show the coordinates next to the label: A(2; 3). */
+  showCoords?: boolean
 }
 
 export interface SegmentItem extends Base {
@@ -186,6 +188,23 @@ export interface VectorItem extends Base {
   type: 'vector'
   a: PointRef
   b: PointRef
+  /** Auxiliary copy (dashed), e.g. in the triangle rule. */
+  aux?: boolean
+}
+
+export type MeasureDef = { kind: 'length'; a: PointRef; b: PointRef } | { kind: 'area'; polygon: string }
+
+/** A value shown on the drawing: AB = 5.39, S = 12.5. */
+export interface MeasureItem extends Base {
+  type: 'measure'
+  def: MeasureDef
+}
+
+/** Free text anchored at a world position. */
+export interface TextItem extends Base {
+  type: 'text'
+  text: string
+  pos: Vec3
 }
 
 export interface RatioItem extends Base {
@@ -207,6 +226,8 @@ export type Item =
   | FaceItem
   | RatioItem
   | VectorItem
+  | MeasureItem
+  | TextItem
 export type ItemType = Item['type']
 
 export interface Doc {
@@ -229,6 +250,8 @@ export const DEFAULT_COLOR: Record<ItemType, string> = {
   face: '#2e9a5a',
   ratio: '#d1382c',
   vector: '#111111',
+  measure: '#111111',
+  text: '#111111',
 }
 /** Images under transformations get their own colour. */
 export const IMAGE_COLOR = '#8e44ad'
@@ -357,6 +380,12 @@ export function refsOf(item: Item): string[] {
     case 'ratio':
     case 'vector':
       add(item.a, item.b)
+      break
+    case 'measure':
+      if (item.def.kind === 'length') add(item.def.a, item.def.b)
+      else add(item.def.polygon)
+      break
+    case 'text':
       break
     case 'plane': {
       const d = item.def

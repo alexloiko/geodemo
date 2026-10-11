@@ -609,3 +609,67 @@ label.check {
   border-color: var(--accent);
   color: #fff;
 }
+
+/* ---------- measures, notes, axes ---------- */
+.measure-text,
+.note-text {
+  font-family: 'Latin Modern Math', 'Cambria Math', 'Times New Roman', serif;
+  font-size: 16px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 4px;
+  cursor: pointer;
+}
+.note-text {
+  font-size: 17px;
+  text-anchor: start;
+}
+.note-text.drag {
+  cursor: move;
+}
+.measure-text.sel,
+.note-text.sel {
+  stroke: #ffd54a;
+}
+.point-label-coords {
+  font-style: normal;
+  font-size: 14px;
+}
+.axes line,
+.axes .arrow {
+  stroke: #4a5566;
+  stroke-width: 1.4;
+}
+.axes .arrow {
+  fill: #4a5566;
+}
+.axis-num {
+  font-size: 11px;
+  fill: #4a5566;
+  text-anchor: middle;
+}
+.axis-num.end {
+  text-anchor: end;
+}
+.axis-name {
+  font-family: 'Cambria Math', 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 15px;
+  fill: #4a5566;
+}
+.item-text {
+  flex: 1;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 13px;
+  min-width: 0;
+}
+.item-text:focus {
+  border-color: var(--line);
+  background: #fff;
+  outline: none;
+}

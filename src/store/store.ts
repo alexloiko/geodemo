@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { type SolidSpec, defaultSpec } from '../geometry/solids'
 import type { Vec3 } from '../geometry/vec'
-import type { Lang } from '../i18n'
+import { type Lang, translate } from '../i18n'
 import type { DictKey } from '../i18n/en'
 import { type Camera, TEXTBOOK_CAMERA, defaultCamera } from '../render/camera'
 import { makePointOnSegment, usedLabels } from '../scene/build'
@@ -46,8 +46,8 @@ export type CanvasHit =
   | { kind: 'plane'; ref: PlaneRef }
   | { kind: 'polygon'; ref: string }
   | { kind: 'vector'; ref: string }
-  /** Empty space; pos is set on the sheet. */
-  | { kind: 'empty'; pos: Vec3 | null }
+  /** Empty space: pos is set on the sheet (a free point can go there); spot is always set. */
+  | { kind: 'empty'; pos: Vec3 | null; spot?: Vec3 }
 
 export const EMPTY_DOC: Doc = { solid: defaultSpec('prism'), items: [] }
 
@@ -72,6 +72,7 @@ interface State {
   showGrid: boolean
   snapGrid: boolean
   dashedHidden: boolean
+  showAxes: boolean
 
   /** Replace the document; pushes undo history unless `transient`. */
   setDoc(doc: Doc, transient?: boolean): void
@@ -94,7 +95,7 @@ interface State {
   finishPolygon(): void
   setOpts(o: Partial<ToolOptions>): void
   setLang(l: Lang): void
-  toggle(key: 'showGrid' | 'dashedHidden' | 'snapGrid'): void
+  toggle(key: 'showGrid' | 'dashedHidden' | 'snapGrid' | 'showAxes'): void
 }
 
 const HISTORY = 100
@@ -161,6 +162,7 @@ export const useStore = create<State>((set, get) => {
     showGrid: true,
     snapGrid: true,
     dashedHidden: true,
+    showAxes: false,
 
     setDoc(doc, transient) {
       if (transient) return set({ doc })
@@ -244,6 +246,14 @@ export const useStore = create<State>((set, get) => {
           get().addItems([p])
           pick = { kind: 'point', ref: p.id }
         }
+      } else if (slot === 'spot') {
+        const spot = h.kind === 'empty' ? (h.spot ?? h.pos) : null
+        if (!spot) return
+        const text = opts.text.trim() || translate(get().lang, 'note.default')
+        get().addItems([{ id: newId('t'), type: 'text', text, pos: spot, color: DEFAULT_COLOR.text, visible: true }])
+        return set({ message: null })
+      } else if (slot === 'polygon') {
+        if (h.kind === 'polygon') pick = { kind: 'polygon', ref: h.ref }
       } else if (slot === 'object') {
         if (h.kind === 'point') pick = { kind: 'point', ref: h.ref }
         else if (h.kind === 'line') pick = { kind: 'line', ref: h.ref }

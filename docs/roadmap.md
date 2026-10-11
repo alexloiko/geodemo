@@ -18,7 +18,19 @@ intersections of lines and circles, circles (3 ways), tangents, polygons, angles
 automatic marks; the same tools inside a working plane of a solid. See
 [design/constructions.md](design/constructions.md).
 
-## Stage 2 — bodies of revolution
+## Stage 2 — bodies of revolution and more constructions (done in v0.3)
+
+Cylinder, cone, truncated cone, sphere with exact contours, sections and surface points; space
+constructions (trace, planes ∩, parallel / perpendicular planes, perpendicular to a plane,
+line–plane angle); triangle elements in one click; transformations; vectors, measurements,
+coordinates and notes. See [design/stage2.md](design/stage2.md).
+
+## Later — combinations of bodies
+
+Several bodies in one scene (sphere inscribed in a cube, cylinder around a prism …) with mutual
+visibility.
+
+## Stage 2 (original plan) — bodies of revolution
 
 Cylinder, cone, truncated cone, sphere; silhouettes; elliptic sections; points on circles and
 generatrices.

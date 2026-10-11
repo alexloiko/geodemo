@@ -1,6 +1,6 @@
 # Design: stage 2 — bodies of revolution and more constructions
 
-Status: approved (2026-10-11)
+Status: implemented in v0.3 (2026-10-11)
 
 Owner decisions: single bodies first (combinations of bodies later); together with the bodies
 add four groups of missing constructions — space constructions, one-click triangle elements,
@@ -143,7 +143,7 @@ CircleDef += { kind: 'image'; src: CircleRef; tf: Transform }
 
 ---
 
-## Phase 5 — coordinates, vectors, measurements, notes
+## Phase 5 — coordinates, vectors, measurements, notes (done)
 
 - **Axes** on the sheet (display toggle) with unit ticks and numbers; **point by coordinates**
   form; per-point toggle to show coordinates in the label (`A(2; 3)`).

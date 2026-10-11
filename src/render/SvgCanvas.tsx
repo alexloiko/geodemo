@@ -12,6 +12,7 @@ import { nextSlot, toolById } from '../scene/tools'
 import { useStore } from '../store/store'
 import { SHEET_PROJECTOR, makeProjector } from './camera'
 import { Label } from './Label'
+import { prettyLabel } from '../scene/labels'
 
 type P2 = [number, number]
 type Look = 'normal' | 'dim' | 'hidden'
@@ -47,11 +48,14 @@ function tOnScreen(m: P2, a: P2, b: P2): number {
 
 const ptsAttr = (pts: P2[]) => pts.map((p) => `${p[0]},${p[1]}`).join(' ')
 
-type Drag = { kind: 'view'; x: number; y: number; moved: boolean } | { kind: 'point'; item: PointItem; moved: boolean }
+type Drag =
+  | { kind: 'view'; x: number; y: number; moved: boolean }
+  | { kind: 'point'; item: PointItem; moved: boolean }
+  | { kind: 'text'; id: string; moved: boolean }
 
 export function SvgCanvas() {
   const st = useStore()
-  const { doc, camera, selection, mode, tool, picks, showGrid, dashedHidden, snapGrid } = st
+  const { doc, camera, selection, mode, tool, picks, showGrid, dashedHidden, snapGrid, showAxes } = st
   const wrap = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const [size, setSize] = useState({ w: 800, h: 600 })
@@ -143,6 +147,7 @@ export function SvgCanvas() {
   const wantsPlane = slot === 'plane'
   const wantsObject = slot === 'object'
   const wantsVector = slot === 'vector'
+  const wantsPolygon = slot === 'polygon'
   const pickedRefs = new Set(picks.map((p) => (p.kind === 'face' ? `f${p.face}` : p.ref)))
   const pickedFace = (f: number) => pickedRefs.has(`f${f}`)
 
@@ -172,6 +177,14 @@ export function SvgCanvas() {
       else st.setCamera({ yaw: camera.yaw + dx * 0.4, pitch: Math.max(-85, Math.min(85, camera.pitch + dy * 0.4)) })
       return
     }
+    if (d.kind === 'text') {
+      if (!d.moved) st.checkpoint()
+      d.moved = true
+      const m = local(e)
+      const n = normalize(pr.toViewer)
+      st.updateItem(d.id, { pos: sheet ? sheetPoint(m) : unproject(m, { n, d: dot(n, center3) }) } as Partial<Item>, true)
+      return
+    }
     const def = dragDef(d.item, local(e))
     if (!def) return
     if (!d.moved) st.checkpoint()
@@ -183,7 +196,11 @@ export function SvgCanvas() {
     drag.current = null
     if (d?.kind !== 'view' || d.moved) return
     if (tool === 'select') st.select(null)
-    else st.hit({ kind: 'empty', pos: sheet ? sheetPoint(local(e)) : null })
+    else {
+      const m = local(e)
+      const n = normalize(pr.toViewer)
+      st.hit({ kind: 'empty', pos: sheet ? sheetPoint(m) : null, spot: sheet ? sheetPoint(m) : unproject(m, { n, d: dot(n, center3) }) })
+    }
   }
   const onWheel = (e: React.WheelEvent) => {
     st.setCamera({ zoom: Math.max(0.3, Math.min(5, camera.zoom * Math.exp(-e.deltaY * 0.0015))) })
@@ -390,6 +407,7 @@ export function SvgCanvas() {
   const faceVisible = solid ? solid.faces.map((_, i) => dot(faceNormal(solid, i), pr.toViewer) > 1e-9) : []
   const figureOp = filtering && mode === 'focus' ? 0.55 : 1
 
+  const labelCenter: P2 = sheet ? sheetLabelAnchor() : centerS
   const fills: React.ReactNode[] = []
   const faceHits: React.ReactNode[] = []
   const strokes: React.ReactNode[] = []
@@ -483,7 +501,7 @@ export function SvgCanvas() {
         e.stopPropagation()
         return st.hit({ kind: 'plane', ref: it.id })
       }
-      if (wantsObject && it.type === 'polygon') {
+      if ((wantsObject || wantsPolygon) && it.type === 'polygon') {
         e.stopPropagation()
         return st.hit({ kind: 'polygon', ref: it.id })
       }
@@ -492,7 +510,9 @@ export function SvgCanvas() {
       st.select(it.id, additive(e))
     }
     const selectable =
-      tool === 'select' || (wantsPlane && it.type === 'plane') || (wantsObject && it.type === 'polygon') ? 'clickable' : undefined
+      tool === 'select' || (wantsPlane && it.type === 'plane') || ((wantsObject || wantsPolygon) && it.type === 'polygon')
+        ? 'clickable'
+        : undefined
     switch (it.type) {
       case 'face': {
         const pts = solid?.faces[it.face]?.map((i) => solid.vertices[i].pos)
@@ -643,7 +663,8 @@ export function SvgCanvas() {
         const [a, b] = ev.vectors.get(it.id)!
         if (sel) halo(a, b, `${it.id}-u`)
         if (pend) halo(a, b, `${it.id}-p`, PENDING)
-        strokes.push(...drawPieces(a, b, it.color, 2.2, it.id, op))
+        if (it.aux) strokes.push(svgLine(a, b, { stroke: it.color, strokeWidth: 1.6, strokeDasharray: '6 5', opacity: op }, it.id))
+        else strokes.push(...drawPieces(a, b, it.color, 2.2, it.id, op))
         const [sa, sb] = [S(a), S(b)]
         const l = Math.hypot(sb[0] - sa[0], sb[1] - sa[1]) || 1
         const [ux, uy] = [(sb[0] - sa[0]) / l, (sb[1] - sa[1]) / l]
@@ -671,6 +692,49 @@ export function SvgCanvas() {
         )
         break
       }
+      case 'measure': {
+        const m = ev.measures.get(it.id)!
+        let [x, y] = S(m.at)
+        if (m.along) {
+          // Beside the segment, away from the figure.
+          const [a, b] = [S(m.along[0]), S(m.along[1])]
+          const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1
+          let [nx, ny] = [-(b[1] - a[1]) / l, (b[0] - a[0]) / l]
+          if (nx * (x - labelCenter[0]) + ny * (y - labelCenter[1]) < 0) [nx, ny] = [-nx, -ny]
+          ;[x, y] = [x + nx * 16, y + ny * 16]
+        }
+        const lbl = (r: string) => prettyLabel(ev.labels.get(r) ?? '')
+        const name = it.def.kind === 'length' ? lbl(it.def.a) + lbl(it.def.b) : 'S'
+        marks.push(
+          <text key={it.id} x={x} y={y} className={`measure-text${sel ? ' sel' : ''}`} fill={it.color} opacity={op} onPointerDown={clickSelect}>
+            {name} = {fmtNum(m.value)}
+          </text>,
+        )
+        break
+      }
+      case 'text': {
+        const [x, y] = S(it.pos)
+        marks.push(
+          <text
+            key={it.id}
+            x={x}
+            y={y}
+            className={`note-text${sel ? ' sel' : ''}${tool === 'select' ? ' drag' : ''}`}
+            fill={it.color}
+            opacity={op}
+            onPointerDown={(e) => {
+              if (tool !== 'select') return
+              e.stopPropagation()
+              st.select(it.id, additive(e))
+              drag.current = { kind: 'text', id: it.id, moved: false }
+              ;(e.target as Element).setPointerCapture?.(e.pointerId)
+            }}
+          >
+            {it.text}
+          </text>,
+        )
+        break
+      }
       case 'ratio': {
         const a = S(ev.points.get(it.a)!)
         const b = S(ev.points.get(it.b)!)
@@ -687,7 +751,6 @@ export function SvgCanvas() {
     ...(solid ? solid.vertices.map((_, i) => ({ ref: `v${i}` })) : []),
     ...doc.items.filter((i): i is PointItem => i.type === 'point').map((i) => ({ ref: i.id, item: i })),
   ]
-  const labelCenter: P2 = sheet ? sheetLabelAnchor() : centerS
   const pointsActive = tool === 'select' || wantsPoint || wantsObject
   for (const { ref, item } of pointRefs) {
     const p = ev.points.get(ref)
@@ -715,7 +778,10 @@ export function SvgCanvas() {
       </g>,
     )
     const dir = labelDir([x, y], labelCenter)
-    labelNodes.push(<Label key={`L${ref}`} x={x + dir[0] * 17} y={y + dir[1] * 17} text={ev.labels.get(ref) ?? ''} opacity={op} />)
+    const coords = item?.showCoords ? `(${fmtNum(p[0])}; ${fmtNum(p[1])}${sheet ? '' : `; ${fmtNum(p[2])}`})` : ''
+    labelNodes.push(
+      <Label key={`L${ref}`} x={x + dir[0] * (coords ? 30 : 17)} y={y + dir[1] * 17} text={ev.labels.get(ref) ?? ''} suffix={coords} opacity={op} />,
+    )
   }
 
   const preview =
@@ -744,6 +810,7 @@ export function SvgCanvas() {
           </pattern>
         </defs>
         <rect width={size.w} height={size.h} fill={showGrid ? 'url(#grid)' : '#fff'} onPointerDown={onBgDown} className="bg" />
+        {sheet && showAxes && <Axes ox={ox} oy={oy} k={k} w={size.w} h={size.h} />}
         <g>{fills}</g>
         <g>{faceHits}</g>
         <g>{underlays}</g>
@@ -820,6 +887,36 @@ export function SvgCanvas() {
     if (!pts.length) return [ox, oy]
     return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length]
   }
+}
+
+/** Number for labels: up to 2 decimals, no trailing zeros. */
+const fmtNum = (v: number) => String(Math.round(v * 100) / 100).replace('-0', '0')
+
+/** Coordinate axes of the sheet with unit ticks. */
+function Axes({ ox, oy, k, w, h }: { ox: number; oy: number; k: number; w: number; h: number }) {
+  const step = k >= 24 ? 1 : k >= 10 ? 2 : 5
+  const ticks: React.ReactNode[] = []
+  for (let i = Math.ceil(-ox / k / step) * step; i * k + ox <= w; i += step) {
+    if (i === 0) continue
+    const x = ox + i * k
+    ticks.push(<line key={`x${i}`} x1={x} y1={oy - 4} x2={x} y2={oy + 4} />, <text key={`tx${i}`} x={x} y={oy + 16} className="axis-num">{i}</text>)
+  }
+  for (let i = Math.ceil((oy - h) / k / step) * step; oy - i * k >= 0; i += step) {
+    if (i === 0) continue
+    const y = oy - i * k
+    ticks.push(<line key={`y${i}`} x1={ox - 4} y1={y} x2={ox + 4} y2={y} />, <text key={`ty${i}`} x={ox - 8} y={y + 4} className="axis-num end">{i}</text>)
+  }
+  return (
+    <g className="axes" pointerEvents="none">
+      <line x1={0} y1={oy} x2={w} y2={oy} />
+      <line x1={ox} y1={h} x2={ox} y2={0} />
+      <path d={`M ${w - 2} ${oy} l -10 -4 v 8 z M ${ox} 2 l -4 10 h 8 z`} className="arrow" />
+      <text x={w - 14} y={oy - 10} className="axis-name">x</text>
+      <text x={ox + 10} y={14} className="axis-name">y</text>
+      <text x={ox - 8} y={oy + 16} className="axis-num end">0</text>
+      {ticks}
+    </g>
+  )
 }
 
 function ticksMark(a: P2, b: P2, count: number, color: string) {

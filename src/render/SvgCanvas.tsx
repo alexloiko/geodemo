@@ -11,6 +11,7 @@ import { type Item, type LineRef, type PointItem, type PointRef, depsOf, pairRef
 import { nextSlot, toolById } from '../scene/tools'
 import { useStore } from '../store/store'
 import { SHEET_PROJECTOR, makeProjector } from './camera'
+import { LONG_PRESS_MS, type PinchStart, TAP_SLOP, pinch } from './gestures'
 import { Label } from './Label'
 import { prettyLabel } from '../scene/labels'
 
@@ -61,6 +62,8 @@ export function SvgCanvas() {
   const [size, setSize] = useState({ w: 800, h: 600 })
   const [hover, setHover] = useState<Vec3 | null>(null)
   const drag = useRef<Drag | null>(null)
+  const bgRef = useRef<SVGRectElement>(null)
+  const touch = useTouchGestures()
 
   useEffect(() => {
     const el = wrap.current
@@ -801,6 +804,10 @@ export function SvgCanvas() {
         className={`canvas tool-${tool} ${sheet ? 'sheet' : 'solid'}`}
         onPointerMove={onMove}
         onPointerUp={onUp}
+        onPointerDownCapture={touch.onDown}
+        onPointerMoveCapture={touch.onMove}
+        onPointerUpCapture={touch.onUp}
+        onPointerCancelCapture={touch.onCancel}
         onWheel={onWheel}
         onPointerLeave={() => setHover(null)}
       >
@@ -809,7 +816,7 @@ export function SvgCanvas() {
             <path d={`M ${cell} 0 L 0 0 0 ${cell}`} fill="none" stroke="#c9d3de" strokeWidth={1} />
           </pattern>
         </defs>
-        <rect width={size.w} height={size.h} fill={showGrid ? 'url(#grid)' : '#fff'} onPointerDown={onBgDown} className="bg" />
+        <rect ref={bgRef} width={size.w} height={size.h} fill={showGrid ? 'url(#grid)' : '#fff'} onPointerDown={onBgDown} className="bg" />
         {sheet && showAxes && <Axes ox={ox} oy={oy} k={k} w={size.w} h={size.h} />}
         <g>{fills}</g>
         <g>{faceHits}</g>
@@ -823,6 +830,105 @@ export function SvgCanvas() {
       </svg>
     </div>
   )
+
+  // ---- touch: taps, drags, long press, pinch -------------------------------
+
+  /**
+   * Touch input is interpreted before the element handlers run: a tap replays the
+   * press on its target when the finger lifts; moving one finger starts a drag (of a
+   * draggable point / note, otherwise of the view); a long press is a Shift-press
+   * (additive selection); two fingers pinch-zoom and pan. Mouse and pen are untouched.
+   */
+  function useTouchGestures() {
+    const touches = useRef(new Map<number, P2>())
+    const pending = useRef<{ id: number; target: Element; client: P2; start: P2; timer: ReturnType<typeof setTimeout> } | null>(null)
+    const pinchStart = useRef<PinchStart | null>(null)
+    const replaying = useRef(false)
+
+    const replay = (target: Element, client: P2, id: number, shiftKey = false) => {
+      replaying.current = true
+      target.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: client[0],
+          clientY: client[1],
+          pointerId: id,
+          pointerType: 'touch',
+          isPrimary: true,
+          button: 0,
+          buttons: 1,
+          shiftKey,
+        }),
+      )
+      replaying.current = false
+    }
+    const clearPending = () => {
+      if (pending.current) clearTimeout(pending.current.timer)
+      pending.current = null
+    }
+    const isTouch = (e: React.PointerEvent) => e.pointerType === 'touch' && !replaying.current
+
+    return {
+      onDown(e: React.PointerEvent) {
+        if (!isTouch(e)) return
+        e.stopPropagation()
+        touches.current.set(e.pointerId, local(e))
+        if (touches.current.size === 1) {
+          const target = e.target as Element
+          const client: P2 = [e.clientX, e.clientY]
+          const id = e.pointerId
+          const timer = setTimeout(() => {
+            // Long press: additive selection with the Select tool, a plain tap otherwise.
+            if (pending.current?.id !== id) return
+            pending.current = null
+            replay(target, client, id, useStore.getState().tool === 'select')
+          }, LONG_PRESS_MS)
+          pending.current = { id, target, client, start: local(e), timer }
+        } else if (touches.current.size === 2) {
+          clearPending()
+          drag.current = null
+          const [a, b] = [...touches.current.values()]
+          const cam = useStore.getState().camera
+          pinchStart.current = { a, b, zoom: cam.zoom, pan: cam.pan }
+        }
+      },
+      onMove(e: React.PointerEvent) {
+        if (!isTouch(e) || !touches.current.has(e.pointerId)) return
+        const m = local(e)
+        touches.current.set(e.pointerId, m)
+        if (pinchStart.current && touches.current.size >= 2) {
+          e.stopPropagation()
+          const [a, b] = [...touches.current.values()]
+          st.setCamera(pinch(pinchStart.current, a, b, [size.w / 2, size.h / 2]))
+          return
+        }
+        const p = pending.current
+        if (p && p.id === e.pointerId && Math.hypot(m[0] - p.start[0], m[1] - p.start[1]) > TAP_SLOP) {
+          clearPending()
+          const draggable = p.target.matches('.hit-point.drag, .note-text.drag')
+          replay(draggable ? p.target : bgRef.current!, p.client, p.id)
+        }
+      },
+      onUp(e: React.PointerEvent) {
+        if (!isTouch(e)) return
+        const p = pending.current
+        if (p && p.id === e.pointerId) {
+          clearPending()
+          replay(p.target, p.client, p.id)
+        }
+        touches.current.delete(e.pointerId)
+        if (touches.current.size < 2) pinchStart.current = null
+        if (touches.current.size === 0 && !drag.current) e.stopPropagation()
+      },
+      onCancel(e: React.PointerEvent) {
+        touches.current.delete(e.pointerId)
+        clearPending()
+        pinchStart.current = null
+        drag.current = null
+      },
+    }
+  }
 
   // ---- marks (hoisted helpers using the current projection) ---------------
 

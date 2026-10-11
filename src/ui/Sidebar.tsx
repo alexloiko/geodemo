@@ -12,6 +12,7 @@ import { GROUPS, TOOLS, type ToolGroup, toolById } from '../scene/tools'
 import { type DisplayMode, useStore } from '../store/store'
 import { ConstructionForm, type FormKind } from './forms'
 import { ToolIcon } from './ToolIcon'
+import { useDevice } from './device'
 
 const FORMS_3D: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
 const FORMS_2D: FormKind[] = ['coords', 'segment', 'intersection', 'ratio']
@@ -23,6 +24,7 @@ export function Sidebar() {
   const t = useT()
   const lang = useStore((s) => s.lang)
   const setLang = useStore((s) => s.setLang)
+  const setUi = useStore((s) => s.setUi)
   return (
     <aside className="sidebar">
       <header className="sb-header">
@@ -30,6 +32,9 @@ export function Sidebar() {
           <h1>{t('appTitle')}</h1>
           <div className="subtitle">{t('appSubtitle')}</div>
         </div>
+        <button className="btn small sb-collapse" onClick={() => setUi({ sidebarCollapsed: true, drawerOpen: false })} aria-label={t('hidePanel')}>
+          ‹
+        </button>
         <div className="seg small">
           {LANGS.map((l) => (
             <button key={l} className={l === lang ? 'on' : ''} onClick={() => setLang(l)}>
@@ -157,6 +162,7 @@ function ToolsPanel() {
   const ev = useMemo(() => evaluate(doc), [doc])
   const names = useMemo(() => makeNamer(doc, ev, t), [doc, ev, t])
   const sheet = !doc.solid
+  const { touch } = useDevice()
   const available = (g: ToolGroup) => TOOLS.filter((d) => d.group === g && !(sheet && d.solidOnly))
   const tabs = GROUPS.filter((g) => g !== 'basic' && available(g).length > 0)
   const toolGroup = toolById(tool).group
@@ -185,7 +191,15 @@ function ToolsPanel() {
                 : names.plane(p.ref)
 
   const toolButton = (d: (typeof TOOLS)[number]) => (
-    <button key={d.id} className={`tool ${tool === d.id ? 'on' : ''}`} onClick={() => st.setTool(d.id)} title={t(`hint.${d.id}` as DictKey)}>
+    <button
+      key={d.id}
+      className={`tool ${tool === d.id ? 'on' : ''}`}
+      onClick={() => {
+        st.setTool(d.id)
+        st.setUi({ drawerOpen: false })
+      }}
+      title={t(`hint.${d.id}` as DictKey)}
+    >
       <ToolIcon tool={d.id} />
       <span>{t(`tool.${d.id}` as DictKey)}</span>
     </button>
@@ -204,7 +218,7 @@ function ToolsPanel() {
       <div className="tools">{available(shown).map(toolButton)}</div>
 
       <div className="tool-status">
-        <p className="hint">{t(`hint.${tool}` as DictKey)}</p>
+        <p className="hint">{t(touch && tool === 'select' ? 'hint.select.touch' : (`hint.${tool}` as DictKey))}</p>
         {picks.length > 0 && (
           <p className="hint picked">
             {t('picked')}: {picks.map(pickName).join(', ')}

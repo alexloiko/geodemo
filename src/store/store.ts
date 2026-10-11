@@ -73,6 +73,12 @@ interface State {
   snapGrid: boolean
   dashedHidden: boolean
   showAxes: boolean
+  /** Touch layouts: tools drawer (compact) and collapsed sidebar (landscape). */
+  drawerOpen: boolean
+  sidebarCollapsed: boolean
+  setUi(ui: { drawerOpen?: boolean; sidebarCollapsed?: boolean }): void
+  /** Cancel the tool's pending picks / plane choice (Esc). */
+  cancelPicks(): void
 
   /** Replace the document; pushes undo history unless `transient`. */
   setDoc(doc: Doc, transient?: boolean): void
@@ -163,6 +169,8 @@ export const useStore = create<State>((set, get) => {
     snapGrid: true,
     dashedHidden: true,
     showAxes: false,
+    drawerOpen: false,
+    sidebarCollapsed: false,
 
     setDoc(doc, transient) {
       if (transient) return set({ doc })
@@ -307,6 +315,12 @@ export const useStore = create<State>((set, get) => {
     },
     setLang(lang) {
       set({ lang })
+    },
+    setUi(ui) {
+      set(ui)
+    },
+    cancelPicks() {
+      set({ picks: [], planeChoice: null, message: null })
     },
     toggle(key) {
       set({ [key]: !get()[key] } as Pick2<State, typeof key>)

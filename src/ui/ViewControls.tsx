@@ -8,9 +8,18 @@ export function ViewControls() {
   const setCamera = useStore((s) => s.setCamera)
   const sheet = useStore((s) => !s.doc.solid)
   const solidKind = useStore((s) => s.doc.solid?.kind ?? null)
+  const collapsed = useStore((s) => s.sidebarCollapsed)
+  const setUi = useStore((s) => s.setUi)
+  // Touch landscape: bring a collapsed sidebar back.
+  const showPanel = (
+    <button className="btn show-panel" onClick={() => setUi({ sidebarCollapsed: false })} hidden={!collapsed}>
+      › {t('tools')}
+    </button>
+  )
   if (sheet)
     return (
       <div className="view-controls">
+        {showPanel}
         <button className="btn" onClick={() => setCamera({ zoom: 1, pan: [0, 0] })}>
           {t('resetView')}
         </button>
@@ -22,6 +31,7 @@ export function ViewControls() {
     )
   return (
     <div className="view-controls">
+      {showPanel}
       <div className="seg">
         <button className={camera.projection === 'oblique' ? 'on' : ''} onClick={() => setCamera({ ...TEXTBOOK_CAMERA, zoom: camera.zoom })}>
           {t('proj.oblique')}

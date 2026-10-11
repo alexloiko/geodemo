@@ -25,12 +25,14 @@ src/
     example.ts      the textbook example document
   render/
     camera.ts       oblique (cabinet) and orthographic projections with yaw/pitch
-    SvgCanvas.tsx   SVG drawing + pointer interaction
+    SvgCanvas.tsx   SVG drawing + pointer interaction; touch layer (tap on release, long press,
+                    one-finger drag, two-finger pinch) that leaves mouse and pen untouched
+    gestures.ts     pinch zoom/pan maths
     Label.tsx       italic serif labels with subscripts
   store/store.ts  app state, undo/redo, tool logic
   persist/        URL hash (lz-string) + localStorage
   i18n/           en / uk dictionaries, useT()
-  ui/             Sidebar, construction forms, view controls
+  ui/             Sidebar, construction forms, view controls, TouchBar, device detection
 ```
 
 ## Data model

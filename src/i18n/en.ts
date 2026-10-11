@@ -270,6 +270,10 @@ export const en = {
   "showCoords": "Show coordinates",
   "type.measure": "Measurements",
   "type.text": "Notes",
+  "cancelPicks": "Cancel",
+  "deleteSelected": "Delete selected",
+  "hidePanel": "Hide the panel",
+  "hint.select.touch": "Drag with one finger to rotate (on the sheet: to move) · two fingers to zoom and move · tap to select · long press adds to the selection · drag points along edges.",
 }
 
 export type Dict = typeof en

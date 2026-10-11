@@ -673,3 +673,197 @@ label.check {
   background: #fff;
   outline: none;
 }
+
+/* ======================================================================
+   Touch devices only (.app.touch is set for coarse pointers or ?touch=1).
+   Desktop layout and sizes are not affected.
+   ====================================================================== */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+.sb-collapse,
+.show-panel {
+  display: none;
+}
+.touch-bar {
+  display: none;
+}
+
+.app.touch {
+  height: 100dvh;
+  grid-template-columns: 300px 1fr;
+  transition: grid-template-columns 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.app.touch .sidebar,
+.app.touch .stage {
+  height: 100dvh;
+}
+.app.touch button,
+.app.touch select,
+.app.touch input {
+  touch-action: manipulation;
+}
+.app.touch input,
+.app.touch select {
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+/* Bigger hit areas for fingers. */
+.app.touch .hit-line,
+.app.touch .hit-curve {
+  stroke-width: 30;
+}
+.app.touch .hit-point {
+  r: 22px;
+}
+.app.touch .tool {
+  min-height: 52px;
+}
+.app.touch .tool-tabs button,
+.app.touch .chip,
+.app.touch .btn,
+.app.touch .seg button {
+  min-height: 36px;
+  padding-inline: 12px;
+}
+.app.touch .item {
+  min-height: 42px;
+}
+.app.touch .icon,
+.app.touch .mini {
+  min-width: 34px;
+  min-height: 34px;
+  justify-content: center;
+  align-items: center;
+}
+.app.touch .swatch {
+  width: 22px;
+  height: 22px;
+}
+.app.touch .sb-collapse {
+  display: inline-block;
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+.app.touch.collapsed {
+  grid-template-columns: 0 1fr;
+}
+.app.touch.collapsed .sidebar {
+  overflow: hidden;
+  border: 0;
+}
+.app.touch.collapsed .show-panel:not([hidden]) {
+  display: inline-block;
+}
+.app.touch .sb-footer {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Bottom bar. */
+.app.touch .touch-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  max-width: calc(100% - 24px);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(20, 30, 60, 0.12);
+}
+.tb-btn {
+  min-width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.tb-btn:disabled {
+  opacity: 0.4;
+}
+.tb-btn.text,
+.tb-btn.wide {
+  font-size: 14px;
+  padding: 0 12px;
+}
+.tb-btn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tb-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.tb-btn.danger {
+  color: var(--danger);
+  border-color: #f0c5c0;
+}
+.tb-sep {
+  width: 1px;
+  height: 28px;
+  background: var(--line);
+}
+.tb-hint {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 6px 2px;
+}
+
+/* Compact (portrait / narrow): full-screen canvas, tools in a drawer. */
+.app.compact {
+  grid-template-columns: 1fr;
+}
+.app.compact .sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: min(340px, 88vw);
+  z-index: 20;
+  transform: translateX(-100%);
+  transition: transform 0.22s ease;
+  box-shadow: 4px 0 24px rgba(20, 30, 60, 0.18);
+}
+.app.compact.drawer-open .sidebar {
+  transform: none;
+}
+.app.compact .sb-collapse {
+  display: inline-block;
+}
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: rgba(20, 25, 35, 0.25);
+}
+.app.compact .view-controls {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.app.touch .tools {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.app.touch .tool span {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}

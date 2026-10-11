@@ -59,6 +59,20 @@ npm run build    # static build in dist/
   *Copy link* shares it.
 - **Example** loads the classic task: prism ABCA₁B₁C₁, A₁K : KB₁ = 3 : 1, section (ACK).
 
+## Tablets
+
+On touch devices (finger as the primary pointer) the board switches to a touch mode; the desktop
+layout and behaviour stay unchanged.
+
+- One finger: rotate the solid / move the sheet; tap = click; long press = add to the selection;
+  points and notes are dragged with a finger. Two fingers: pinch to zoom and move the view.
+  A stylus works like a mouse.
+- Bigger hit areas and buttons; a bottom bar with Undo/Redo, Cancel, Finish (polygon) and
+  Delete selected (the keyboard-only actions on a desktop).
+- Landscape: the sidebar stays on the left and can be collapsed. Portrait: full-screen canvas,
+  the basic tools in the bottom bar and all tools in a drawer.
+- For testing on a desktop: `?touch=1` (landscape touch mode), `?touch=compact` (portrait).
+
 ## Docs
 
 - [Architecture](docs/architecture.md)

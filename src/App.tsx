@@ -3,6 +3,8 @@ import { SvgCanvas } from './render/SvgCanvas'
 import { type Tool, useStore } from './store/store'
 import { Sidebar } from './ui/Sidebar'
 import { ViewControls } from './ui/ViewControls'
+import { TouchBar } from './ui/TouchBar'
+import { useDevice } from './ui/device'
 
 const TOOL_KEYS: Record<string, Tool> = {
   '1': 'select',
@@ -36,7 +38,7 @@ export default function App() {
         e.preventDefault()
         st.redo()
       } else if (e.key === 'Escape') {
-        if (st.picks.length || st.planeChoice) useStore.setState({ picks: [], planeChoice: null, message: null })
+        if (st.picks.length || st.planeChoice) st.cancelPicks()
         else if (st.tool !== 'select') st.setTool('select')
         else st.select(null)
       } else if (e.key === 'Enter') {
@@ -52,12 +54,19 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const { touch, compact } = useDevice()
+  const drawerOpen = useStore((s) => s.drawerOpen)
+  const collapsed = useStore((s) => s.sidebarCollapsed)
+  const cls = ['app', touch && 'touch', compact && 'compact', compact && drawerOpen && 'drawer-open', touch && !compact && collapsed && 'collapsed']
+
   return (
-    <div className="app">
+    <div className={cls.filter(Boolean).join(' ')}>
       <Sidebar />
+      {compact && drawerOpen && <div className="drawer-backdrop" onClick={() => useStore.getState().setUi({ drawerOpen: false })} />}
       <main className="stage">
         <SvgCanvas />
         <ViewControls />
+        {touch && <TouchBar compact={compact} />}
       </main>
     </div>
   )

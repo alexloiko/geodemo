@@ -18,9 +18,9 @@ export const ORTHO_CAMERA: Camera = { yaw: -28, pitch: 18, zoom: 1, projection: 
 /** Bodies of revolution are drawn from the front, slightly from above (horizontal base ellipses). */
 export const ROUND_CAMERA: Camera = { yaw: 0, pitch: 16, zoom: 1, projection: 'orthographic', pan: [0, 0] }
 
-/** Default view for a figure. */
+/** Default view for a figure: orthographic (front-from-above for bodies of revolution). */
 export const defaultCamera = (solidKind: string | null): Camera =>
-  solidKind && ['cylinder', 'cone', 'truncatedCone', 'sphere'].includes(solidKind) ? ROUND_CAMERA : TEXTBOOK_CAMERA
+  solidKind && ['cylinder', 'cone', 'truncatedCone', 'sphere'].includes(solidKind) ? ROUND_CAMERA : ORTHO_CAMERA
 
 /** Cabinet projection: receding axis drawn at 45°, foreshortened by half. */
 const K = 0.5

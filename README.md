@@ -52,8 +52,8 @@ npm run build    # static build in dist/
 - **Elements** list: colour (click the swatch), rename points, show/hide, delete
   (dependents are removed too), `aux` / `ext` toggles.
 - **Display** modes: *All*, *Focus* (dims everything not selected), *Only selected*.
-- **View**: drag to rotate (Shift+drag pans), wheel to zoom, *Textbook* (cabinet oblique) or
-  *Orthographic*. On the sheet drag pans; one grid cell is one unit and points snap to grid nodes.
+- **View**: drag to rotate (Shift+drag pans), wheel to zoom, *Orthographic* (default) or
+  *Textbook* (cabinet oblique). On the sheet drag pans; one grid cell is one unit and points snap to grid nodes.
 - **Undo/redo** (Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z), **Delete** removes the selection,
   **Esc** cancels. The construction is kept in localStorage and in the URL —
   *Copy link* shares it.

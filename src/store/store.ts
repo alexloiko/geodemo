@@ -3,7 +3,7 @@ import { type SolidSpec, defaultSpec } from '../geometry/solids'
 import type { Vec3 } from '../geometry/vec'
 import { type Lang, translate } from '../i18n'
 import type { DictKey } from '../i18n/en'
-import { type Camera, TEXTBOOK_CAMERA, defaultCamera } from '../render/camera'
+import { type Camera, defaultCamera } from '../render/camera'
 import { makePointOnSegment, usedLabels } from '../scene/build'
 import { type Evaluated, evaluate, resolveLine } from '../scene/evaluate'
 import { labelsFromA, nextLabel } from '../scene/labels'
@@ -158,7 +158,7 @@ export const useStore = create<State>((set, get) => {
     future: [],
     selection: [],
     mode: 'all',
-    camera: TEXTBOOK_CAMERA,
+    camera: defaultCamera(EMPTY_DOC.solid?.kind ?? null),
     tool: 'select',
     picks: [],
     message: null,

@@ -69,7 +69,7 @@ points (e.g. an axial section) accept points like polyhedron sections.
 
 ---
 
-## Phase 2 — space constructions (solids only)
+## Phase 2 — space constructions (solids only) (done)
 
 New input slot **plane**: a click on a face or on a section fill picks that plane.
 
@@ -93,7 +93,8 @@ Tools (group *Space*):
 | Line–plane angle | line, plane | trace `O`, foot `H` of a line point, segments, ∠ with degrees |
 | Plane ⟂ line | point, line | plane + section |
 
-Section, plane extension and auto section points work for every plane definition.
+Section, plane extension and auto section points work for every plane definition. Feet of
+perpendiculars that fall on an existing point (e.g. a vertex) reuse it instead of adding a duplicate.
 
 ---
 

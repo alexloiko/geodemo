@@ -17,7 +17,9 @@ import {
   lineThrough,
   parallelThrough,
   perpBisector,
+  linePlane,
   perpendicularThrough,
+  planePlane,
   pointAt,
 } from '../geometry/lines'
 import { type Plane, intersectLines, planeFrom3, signedDist } from '../geometry/plane'
@@ -25,12 +27,13 @@ import { type Polyhedron, boundingRadius, edgesOf, faceNormal, flatFaces } from 
 import { type SectionVertex, enclosingBox, section } from '../geometry/section'
 import { rims, surfacePoint } from '../geometry/revolution'
 import { buildSolid } from '../geometry/solids'
-import { type Vec3, cross, dist, dot, len, lerp, normalize, sub } from '../geometry/vec'
+import { type Vec3, cross, dist, dot, len, lerp, normalize, scale, sub } from '../geometry/vec'
 import {
   type CircleItem,
   type Doc,
   type LineItem,
   type LineRef,
+  type PlaneDef,
   type PlaneRef,
   type PointItem,
   type PointRef,
@@ -128,8 +131,7 @@ export function evaluate(doc: Doc): Evaluated {
         break
       }
       case 'plane': {
-        const [a, b, c] = [ev.points.get(it.a), ev.points.get(it.b), ev.points.get(it.c)]
-        const pl = a && b && c ? planeFrom3(a, b, c) : null
+        const pl = evalPlaneDef(it.def, ev)
         if (!pl || !solid || !box) {
           ok = false
           break
@@ -214,6 +216,26 @@ export function planesContaining(ev: Evaluated, pts: Vec3[]): PlaneRef[] {
   return out
 }
 
+function evalPlaneDef(d: PlaneDef, ev: Evaluated): Plane | null {
+  const P = (r: PointRef) => ev.points.get(r)
+  switch (d.kind) {
+    case 'three': {
+      const [a, b, c] = [P(d.a), P(d.b), P(d.c)]
+      return a && b && c ? planeFrom3(a, b, c) : null
+    }
+    case 'parallel': {
+      const [q, pl] = [P(d.point), resolvePlane(ev, d.plane)]
+      return q && pl ? { n: pl.n, d: dot(pl.n, q) } : null
+    }
+    case 'perpToLine': {
+      const [q, l] = [P(d.point), resolveLine(ev, d.line)]
+      if (!q || !l) return null
+      const n = normalize(l.d)
+      return { n, d: dot(n, q) }
+    }
+  }
+}
+
 function evalLine(it: LineItem, ev: Evaluated): EvLine | null {
   const P = (r: PointRef) => ev.points.get(r)
   const d = it.def
@@ -244,6 +266,18 @@ function evalLine(it: LineItem, ev: Evaluated): EvLine | null {
       const [a, o, b] = [P(d.a), P(d.vertex), P(d.b)]
       const l = a && o && b ? angleBisector(a, o, b) : null
       return l ? { ...l, extent } : null
+    }
+    case 'planePlane': {
+      const [a, b] = [resolvePlane(ev, d.p1), resolvePlane(ev, d.p2)]
+      const l = a && b ? planePlane(a, b) : null
+      return l ? { ...l, extent } : null
+    }
+    case 'perpToPlane': {
+      const [q, pl] = [P(d.point), resolvePlane(ev, d.plane)]
+      if (!q || !pl) return null
+      // Through the foot, so the line starts at the plane.
+      const f = sub(q, scale(pl.n, dot(pl.n, q) - pl.d))
+      return { p: f, d: pl.n, extent }
     }
     case 'tangent': {
       const [c, q] = [ev.circles.get(d.circle), P(d.point)]
@@ -339,6 +373,14 @@ function evalPoint(it: PointItem, ev: Evaluated): Vec3 | null {
     }
     case 'onSurface':
       return ev.solid?.rev ? surfacePoint(ev.solid.rev, d.u, d.w) : null
+    case 'linePlane': {
+      const [l, pl] = [resolveLine(ev, d.line), resolvePlane(ev, d.plane)]
+      return l && pl ? linePlane(l, pl) : null
+    }
+    case 'projPlane': {
+      const [q, pl] = [P(d.point), resolvePlane(ev, d.plane)]
+      return q && pl ? sub(q, scale(pl.n, dot(pl.n, q) - pl.d)) : null
+    }
     case 'circlePlane': {
       const [c, pl] = [ev.circles.get(d.circle), ev.planes.get(d.plane)]
       return c && pl ? (circlePlanePoints(c, pl.plane, ev.tol)[d.index] ?? null) : null

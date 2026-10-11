@@ -140,7 +140,9 @@ export function SvgCanvas() {
   const wantsPoint = slot === 'point'
   const wantsLine = slot === 'line' || slot === 'curve'
   const wantsCircle = slot === 'circle' || slot === 'curve'
+  const wantsPlane = slot === 'plane'
   const pickedRefs = new Set(picks.map((p) => (p.kind === 'face' ? `f${p.face}` : p.ref)))
+  const pickedFace = (f: number) => pickedRefs.has(`f${f}`)
 
   // ---- interaction -------------------------------------------------------
   const local = (e: React.PointerEvent | React.MouseEvent): P2 => {
@@ -428,9 +430,9 @@ export function SvgCanvas() {
       contourGeneratrices(rev, pr.toViewer).forEach(([a, b], i) =>
         strokes.push(svgLine(a, b, { stroke: '#111', strokeWidth: 2, strokeLinecap: 'round', opacity: figureOp }, `gen${i}`)),
       )
-    if (wantsPoint || slot === 'face')
+    if (wantsPoint || slot === 'face' || wantsPlane)
       solid.faces.forEach((f, i) => {
-        if (!faceVisible[i] || (slot === 'face' && solid.smooth?.[i])) return
+        if (!faceVisible[i] || (!wantsPoint && solid.smooth?.[i])) return
         faceHits.push(
           <polygon key={`fh${i}`} points={poly(f.map((v) => solid.vertices[v].pos))} className="hit-face" onPointerDown={(e) => onFaceDown(i, e)} />,
         )
@@ -452,7 +454,7 @@ export function SvgCanvas() {
         )
       hits.push(lineHit(a, b, ref, true, null, `he${e.a}-${e.b}`))
     }
-    if (wantsPoint || slot === 'face')
+    if (wantsPoint || slot === 'face' || wantsPlane)
       solid.faces.forEach((f, i) => {
         if (!faceVisible[i]) return
         faceHits.push(
@@ -461,6 +463,13 @@ export function SvgCanvas() {
       })
   }
 
+  // Picked faces (plane slots) are tinted until the tool completes.
+  if (solid)
+    solid.faces.forEach((f, i) => {
+      if (pickedFace(i))
+        fills.push(<polygon key={`pf${i}`} points={poly(f.map((v) => solid.vertices[v].pos))} fill={PENDING} fillOpacity={0.28} pointerEvents="none" />)
+    })
+
   for (const it of doc.items) {
     const l = look(it)
     if (l === 'hidden' || ev.invalid.has(it.id)) continue
@@ -468,11 +477,15 @@ export function SvgCanvas() {
     const sel = selection.includes(it.id)
     const pend = pickedRefs.has(it.id)
     const clickSelect = (e: React.PointerEvent) => {
+      if (wantsPlane && it.type === 'plane') {
+        e.stopPropagation()
+        return st.hit({ kind: 'plane', ref: it.id })
+      }
       if (tool !== 'select') return
       e.stopPropagation()
       st.select(it.id, additive(e))
     }
-    const selectable = tool === 'select' ? 'clickable' : undefined
+    const selectable = tool === 'select' || (wantsPlane && it.type === 'plane') ? 'clickable' : undefined
     switch (it.type) {
       case 'face': {
         const pts = solid?.faces[it.face]?.map((i) => solid.vertices[i].pos)
@@ -498,14 +511,14 @@ export function SvgCanvas() {
           fills.push(<polygon key={`${it.id}-x`} points={poly(pl.extension)} fill={it.color} fillOpacity={0.14 * op} />)
         if (pl.circle) {
           const pts = sampleCircle(pl.circle, 160)
-          fills.push(<polygon key={it.id} points={poly(pts)} fill={it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
+          fills.push(<polygon key={it.id} points={poly(pts)} fill={pend ? PENDING : it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
           if (sel) underlays.push(<polygon key={`${it.id}-u`} points={poly(pts)} fill="none" stroke={SELECT_HALO} strokeWidth={8} opacity={0.6} />)
           strokes.push(...drawCurve(pts, it.color, 2.4, it.id, op))
           break
         }
         const sec = pl.section.map((v) => v.pos)
         if (sec.length < 3) break
-        fills.push(<polygon key={it.id} points={poly(sec)} fill={it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
+        fills.push(<polygon key={it.id} points={poly(sec)} fill={pend ? PENDING : it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
         if (solid?.rev) strokes.push(...drawCurve(sec, it.color, 2.4, `${it.id}-c`, op))
         sec.forEach((p, i) => {
           const q = sec[(i + 1) % sec.length]
@@ -587,6 +600,22 @@ export function SvgCanvas() {
         } else if (d.kind === 'ticks') {
           const [a, b] = [ev.points.get(d.a), ev.points.get(d.b)]
           if (a && b) node = ticksMark(S(a), S(b), d.count, it.color)
+        } else if (d.kind === 'rightPlane') {
+          const at = ev.points.get(d.at)
+          const l = resolveLine(ev, d.line)
+          const pl = resolvePlane(ev, d.plane)
+          if (at && l && pl) {
+            // Second side: the in-plane direction that is least foreshortened on screen.
+            let w = cross(pl.n, pr.toViewer)
+            if (len(w) < 1e-6) w = cross(pl.n, [1, 0, 0])
+            const towards = d.toward ? ev.points.get(d.toward) : undefined
+            let d1 = normalize(l.d)
+            if (towards && dot(sub(towards, at), d1) < 0) d1 = scale(d1, -1)
+            const s = 13 / k
+            const a1 = scale(d1, s)
+            const a2 = scale(normalize(w), s)
+            node = <polyline points={ptsAttr([add(at, a1), add(at, add(a1, a2)), add(at, a2)].map(S))} fill="none" stroke={it.color} strokeWidth={1.6} />
+          }
         } else {
           const [a, o, b] = [ev.points.get(d.a), ev.points.get(d.vertex), ev.points.get(d.b)]
           if (a && o && b) node = angleMark(a, o, b, 1, it.color, false, false, true)

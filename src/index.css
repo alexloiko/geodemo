@@ -585,3 +585,27 @@ label.check {
   stroke: rgba(255, 255, 255, 0.9);
   stroke-width: 4px;
 }
+
+/* ---------- tool tabs ---------- */
+.tools.basic {
+  margin-bottom: 8px;
+}
+.tool-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.tool-tabs button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tool-tabs button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}

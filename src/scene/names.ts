@@ -1,7 +1,7 @@
 import type { DictKey } from '../i18n/en'
 import type { Evaluated } from './evaluate'
 import { prettyLabel } from './labels'
-import { type Doc, type Item, type LineRef, type PlaneRef, SHEET, parseFaceRef, parsePairRef, parseRimRef } from './model'
+import { type Doc, type Item, type LineRef, type PlaneDef, type PlaneRef, SHEET, parseFaceRef, parsePairRef, parseRimRef } from './model'
 
 type T = (key: DictKey, vars?: Record<string, string>) => string
 
@@ -65,7 +65,16 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
     const f = parseFaceRef(ref)
     if (f !== null) return t('plane.face', { f: face(f) })
     const it = byId.get(ref)
-    return it?.type === 'plane' ? `(${point(it.a)}${point(it.b)}${point(it.c)})` : '?'
+    return it?.type === 'plane' ? planeItemName(it.def) : '?'
+  }
+  /** Planes through three points read (ABC); others get α, β, γ … in order. */
+  const planeLetters = new Map<string, string>()
+  for (const it of doc.items)
+    if (it.type === 'plane' && it.def.kind !== 'three') planeLetters.set(it.id, 'αβγδεζ'[planeLetters.size % 6])
+  function planeItemName(d: PlaneDef): string {
+    if (d.kind === 'three') return `(${point(d.a)}${point(d.b)}${point(d.c)})`
+    const it = doc.items.find((i) => i.type === 'plane' && i.def === d)
+    return (it && planeLetters.get(it.id)) ?? 'α'
   }
 
   /** Short name shown before the description ("a", "ω", "K"), or null. */
@@ -103,6 +112,10 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
             return t('desc.onSurface')
           case 'circlePlane':
             return t('desc.circlePlane', { c: circle(d.circle) })
+          case 'linePlane':
+            return t('desc.linePlane', { l: line(d.line), q: plane(d.plane) })
+          case 'projPlane':
+            return t('desc.projPlane', { p: point(d.point), q: plane(d.plane) })
         }
         break
       }
@@ -123,6 +136,10 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
             return t('desc.angleBisector', { a: point(d.a) + point(d.vertex) + point(d.b) })
           case 'tangent':
             return t('desc.tangent', { c: circle(d.circle), p: point(d.point) })
+          case 'planePlane':
+            return t('desc.planePlane', { a: plane(d.p1), b: plane(d.p2) })
+          case 'perpToPlane':
+            return t('desc.perpToPlane', { p: point(d.point), q: plane(d.plane) })
         }
         break
       }
@@ -138,12 +155,16 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
         return `∠${point(it.a)}${point(it.vertex)}${point(it.b)}`
       case 'mark': {
         const d = it.def
-        if (d.kind === 'right') return t('desc.right', { p: point(d.at) })
+        if (d.kind === 'right' || d.kind === 'rightPlane') return t('desc.right', { p: point(d.at) })
         if (d.kind === 'ticks') return t('desc.ticks', { s: pair(d.a, d.b) })
         return t('desc.equalAngles', { p: point(d.vertex) })
       }
-      case 'plane':
-        return `(${point(it.a)}${point(it.b)}${point(it.c)})`
+      case 'plane': {
+        const d = it.def
+        if (d.kind === 'three') return planeItemName(d)
+        if (d.kind === 'parallel') return `${planeItemName(d)}: ${t('desc.planeParallel', { p: point(d.point), q: plane(d.plane) })}`
+        return `${planeItemName(d)}: ${t('desc.planePerpLine', { p: point(d.point), l: line(d.line) })}`
+      }
       case 'face':
         return face(it.face)
       case 'ratio':

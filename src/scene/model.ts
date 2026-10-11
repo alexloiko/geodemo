@@ -50,6 +50,10 @@ export type PointDef =
   | { kind: 'onSurface'; u: number; w: number }
   /** Point number `index` where a plane item cuts a circle (rims of bodies of revolution). */
   | { kind: 'circlePlane'; circle: CircleRef; plane: string; index: number }
+  /** Where a line meets a plane (the trace of the line). */
+  | { kind: 'linePlane'; line: LineRef; plane: PlaneRef }
+  /** Orthogonal projection of a point onto a plane (foot of the perpendicular). */
+  | { kind: 'projPlane'; point: PointRef; plane: PlaneRef }
 
 export type LineDef =
   | { kind: 'through'; a: PointRef; b: PointRef }
@@ -59,6 +63,17 @@ export type LineDef =
   | { kind: 'angleBisector'; a: PointRef; vertex: PointRef; b: PointRef }
   /** Tangent from `point` to `circle` touching it at tangency point number `index`. */
   | { kind: 'tangent'; circle: CircleRef; point: PointRef; index: number }
+  /** Line where two planes meet. */
+  | { kind: 'planePlane'; p1: PlaneRef; p2: PlaneRef }
+  /** Line through a point perpendicular to a plane. */
+  | { kind: 'perpToPlane'; point: PointRef; plane: PlaneRef }
+
+export type PlaneDef =
+  | { kind: 'three'; a: PointRef; b: PointRef; c: PointRef }
+  /** Plane through a point parallel to a given plane (face, section, …). */
+  | { kind: 'parallel'; point: PointRef; plane: PlaneRef }
+  /** Plane through a point perpendicular to a line. */
+  | { kind: 'perpToLine'; point: PointRef; line: LineRef }
 
 export type CircleDef =
   | { kind: 'centerPoint'; center: PointRef; through: PointRef; plane: PlaneRef }
@@ -72,6 +87,8 @@ export type MarkDef =
   | { kind: 'ticks'; a: PointRef; b: PointRef; count: number }
   /** Two equal half-angle arcs of angle a-vertex-b (angle bisector). */
   | { kind: 'equalAngles'; a: PointRef; vertex: PointRef; b: PointRef }
+  /** Right-angle square at `at` between a line and a plane perpendicular to it. */
+  | { kind: 'rightPlane'; at: PointRef; line: LineRef; plane: PlaneRef; toward?: PointRef }
 
 interface Base {
   id: string
@@ -127,9 +144,7 @@ export interface MarkItem extends Base {
 
 export interface PlaneItem extends Base {
   type: 'plane'
-  a: PointRef
-  b: PointRef
-  c: PointRef
+  def: PlaneDef
   /** Draw the plane beyond the solid (faint). */
   extend: boolean
 }
@@ -224,6 +239,12 @@ export function refsOf(item: Item): string[] {
           break
         case 'onSurface':
           break
+        case 'linePlane':
+          add(d.line, d.plane)
+          break
+        case 'projPlane':
+          add(d.point, d.plane)
+          break
       }
       break
     }
@@ -248,6 +269,12 @@ export function refsOf(item: Item): string[] {
         case 'tangent':
           add(d.circle, d.point)
           break
+        case 'planePlane':
+          add(d.p1, d.p2)
+          break
+        case 'perpToPlane':
+          add(d.point, d.plane)
+          break
       }
       break
     }
@@ -261,6 +288,7 @@ export function refsOf(item: Item): string[] {
     case 'mark': {
       const d = item.def
       if (d.kind === 'right') add(d.at, d.l1, d.l2, d.p1, d.p2)
+      else if (d.kind === 'rightPlane') add(d.at, d.line, d.plane, d.toward)
       else if (d.kind === 'ticks') add(d.a, d.b)
       else add(d.a, d.vertex, d.b)
       break
@@ -275,9 +303,13 @@ export function refsOf(item: Item): string[] {
     case 'ratio':
       add(item.a, item.b)
       break
-    case 'plane':
-      add(item.a, item.b, item.c)
+    case 'plane': {
+      const d = item.def
+      if (d.kind === 'three') add(d.a, d.b, d.c)
+      else if (d.kind === 'parallel') add(d.point, d.plane)
+      else add(d.point, d.line)
       break
+    }
     case 'face':
       break
   }

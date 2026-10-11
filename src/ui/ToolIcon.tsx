@@ -127,4 +127,45 @@ const ICONS: Record<ToolId, React.ReactNode> = {
   ),
   plane: <path d="M3 16l6-9h12l-6 9z" fill="currentColor" fillOpacity={0.2} />,
   face: <path d="M5 8l7-4 7 4v8l-7 4-7-4z M5 8l7 4 7-4 M12 12v8" fill="currentColor" fillOpacity={0.1} />,
+  trace: (
+    <>
+      <path d="M2 17l6-7h14l-6 7z" fill="currentColor" fillOpacity={0.15} />
+      <path d="M8 2l6 18" />
+      {dot(12.3, 14.6, true)}
+    </>
+  ),
+  planesMeet: (
+    <>
+      <path d="M2 16l6-7h14l-6 7z" fill="currentColor" fillOpacity={0.12} />
+      <path d="M10 3v15l4-4V2z" fill="currentColor" fillOpacity={0.25} />
+      <path d="M7 12.5h11" strokeWidth={2.2} />
+    </>
+  ),
+  parallelPlane: (
+    <>
+      <path d="M2 20l5-5h15l-5 5z" fill="currentColor" fillOpacity={0.12} />
+      <path d="M2 10l5-5h15l-5 5z" fill="currentColor" fillOpacity={0.25} />
+    </>
+  ),
+  perpPlane: (
+    <>
+      <path d="M2 19l6-6h14l-6 6z" fill="currentColor" fillOpacity={0.15} />
+      <path d="M12 3v13" />
+      {dot(12, 3)}
+      <path d="M12 13h3l-1 2" strokeWidth={1.2} />
+    </>
+  ),
+  lineAngle: (
+    <>
+      <path d="M2 19l6-6h14l-6 6z" fill="currentColor" fillOpacity={0.15} />
+      <path d="M6 17L19 3" />
+      <path d="M11 16a5 5 0 0 0-1.5-3.5" strokeWidth={1.3} />
+    </>
+  ),
+  planePerpLine: (
+    <>
+      <path d="M3 7l5 13M8 4v14l8-4V0z" fill="currentColor" fillOpacity={0.2} />
+      <path d="M2 11h20" />
+    </>
+  ),
 }

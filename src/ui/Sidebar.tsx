@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { type SolidKind, type SolidSpec, SOLID_KINDS, defaultSpec, isRevolution } from '../geometry/solids'
 import { type DictKey, LANGS, useT } from '../i18n'
 import { shareUrl } from '../persist/persist'
@@ -8,7 +8,7 @@ import { loadExample } from '../scene/example'
 import { prettyLabel } from '../scene/labels'
 import { type ItemType, PALETTE } from '../scene/model'
 import { makeNamer } from '../scene/names'
-import { GROUPS, TOOLS, type ToolGroup } from '../scene/tools'
+import { GROUPS, TOOLS, type ToolGroup, toolById } from '../scene/tools'
 import { type DisplayMode, useStore } from '../store/store'
 import { ConstructionForm, type FormKind } from './forms'
 import { ToolIcon } from './ToolIcon'
@@ -157,26 +157,45 @@ function ToolsPanel() {
   const ev = useMemo(() => evaluate(doc), [doc])
   const names = useMemo(() => makeNamer(doc, ev, t), [doc, ev, t])
   const sheet = !doc.solid
-  const groups = GROUPS.filter((g) => !(sheet && g === 'solid'))
+  const available = (g: ToolGroup) => TOOLS.filter((d) => d.group === g && !(sheet && d.solidOnly))
+  const tabs = GROUPS.filter((g) => g !== 'basic' && available(g).length > 0)
+  const toolGroup = toolById(tool).group
+  const [tab, setTab] = useState<ToolGroup>(toolGroup !== 'basic' ? toolGroup : 'construct')
+  // Follow the active tool when it is chosen elsewhere (keyboard shortcuts).
+  useEffect(() => {
+    if (toolGroup !== 'basic') setTab(toolGroup)
+  }, [toolGroup])
+  const shown = tabs.includes(tab) ? tab : tabs[0]
 
   const pickName = (p: (typeof picks)[number]) =>
-    p.kind === 'point' ? names.point(p.ref) : p.kind === 'line' ? names.line(p.ref) : p.kind === 'circle' ? names.circle(p.ref) : names.face(p.face)
+    p.kind === 'point'
+      ? names.point(p.ref)
+      : p.kind === 'line'
+        ? names.line(p.ref)
+        : p.kind === 'circle'
+          ? names.circle(p.ref)
+          : p.kind === 'face'
+            ? names.face(p.face)
+            : names.plane(p.ref)
+
+  const toolButton = (d: (typeof TOOLS)[number]) => (
+    <button key={d.id} className={`tool ${tool === d.id ? 'on' : ''}`} onClick={() => st.setTool(d.id)} title={t(`hint.${d.id}` as DictKey)}>
+      <ToolIcon tool={d.id} />
+      <span>{t(`tool.${d.id}` as DictKey)}</span>
+    </button>
+  )
 
   return (
     <Section title={t('tools')}>
-      {groups.map((g: ToolGroup) => (
-        <div key={g} className="tool-group">
-          <div className="group-label">{t(`group.${g}` as DictKey)}</div>
-          <div className="tools">
-            {TOOLS.filter((d) => d.group === g && !(sheet && d.solidOnly)).map((d) => (
-              <button key={d.id} className={`tool ${tool === d.id ? 'on' : ''}`} onClick={() => st.setTool(d.id)} title={t(`tool.${d.id}` as DictKey)}>
-                <ToolIcon tool={d.id} />
-                <span>{t(`tool.${d.id}` as DictKey)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
+      <div className="tools basic">{available('basic').map(toolButton)}</div>
+      <div className="tool-tabs" role="tablist">
+        {tabs.map((g) => (
+          <button key={g} role="tab" aria-selected={shown === g} className={shown === g ? 'on' : ''} onClick={() => setTab(g)}>
+            {t(`group.${g}` as DictKey)}
+          </button>
+        ))}
+      </div>
+      <div className="tools">{available(shown).map(toolButton)}</div>
 
       <div className="tool-status">
         <p className="hint">{t(`hint.${tool}` as DictKey)}</p>

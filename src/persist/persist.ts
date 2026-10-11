@@ -5,7 +5,7 @@ import type { Doc, Item } from '../scene/model'
 import { useStore } from '../store/store'
 
 const KEY = 'geodemo:v1'
-const VERSION = 2
+const VERSION = 3
 
 interface Saved {
   v: number
@@ -15,20 +15,32 @@ interface Saved {
 
 export const encodeDoc = (doc: Doc): string => compressToEncodedURIComponent(JSON.stringify({ v: VERSION, doc }))
 
-/** v1 → v2: lines were `{a, b}`; now they carry a definition and an extent. */
+/**
+ * Old documents → current format.
+ * v1 → v2: lines were `{a, b}`; now they carry a definition and an extent.
+ * v2 → v3: planes were `{a, b, c}`; now they carry a definition.
+ */
 export function migrate(saved: { v: number; doc: Doc; lang?: Lang }): Saved | null {
-  if (saved.v === 1) {
-    const items = saved.doc.items.map((it) => {
-      const old = it as unknown as { type: string; a?: string; b?: string; def?: unknown }
-      if (old.type === 'line' && !old.def) {
-        const { a, b, ...rest } = old
-        return { ...rest, def: { kind: 'through', a, b }, extent: 'line' } as unknown as Item
-      }
-      return it
+  let { v, doc } = saved
+  const mapItems = (f: (it: Record<string, unknown>) => Record<string, unknown>) =>
+    (doc = { ...doc, items: doc.items.map((it) => f(it as unknown as Record<string, unknown>) as unknown as Item) })
+  if (v === 1) {
+    mapItems((it) => {
+      if (it.type !== 'line' || it.def) return it
+      const { a, b, ...rest } = it
+      return { ...rest, def: { kind: 'through', a, b }, extent: 'line' }
     })
-    return { ...saved, v: VERSION, doc: { ...saved.doc, items } }
+    v = 2
   }
-  return saved.v === VERSION ? saved : null
+  if (v === 2) {
+    mapItems((it) => {
+      if (it.type !== 'plane' || it.def) return it
+      const { a, b, c, ...rest } = it
+      return { ...rest, def: { kind: 'three', a, b, c } }
+    })
+    v = 3
+  }
+  return v === VERSION ? { ...saved, v, doc } : null
 }
 
 function decode(s: string | null): Saved | null {

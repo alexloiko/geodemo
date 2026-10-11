@@ -203,7 +203,7 @@ describe('persistence', () => {
       } as unknown as Doc,
     }
     const m = migrate(v1)!
-    expect(m.v).toBe(2)
+    expect(m.v).toBe(3)
     const line = m.doc.items[0]
     expect(line.type === 'line' && line.def).toEqual({ kind: 'through', a: 'v0', b: 'v1' })
     expect(evaluate(m.doc).invalid.size).toBe(0)

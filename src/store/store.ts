@@ -42,6 +42,8 @@ export type CanvasHit =
   | { kind: 'face'; face: number; pos: Vec3 }
   /** Curved surface of a body of revolution. */
   | { kind: 'surface'; u: number; w: number }
+  /** A section (plane item) fill. */
+  | { kind: 'plane'; ref: PlaneRef }
   /** Empty space; pos is set on the sheet. */
   | { kind: 'empty'; pos: Vec3 | null }
 
@@ -125,6 +127,7 @@ function materializePoint(doc: Doc, ev: Evaluated, h: CanvasHit): PointItem | nu
     case 'empty':
       return h.pos ? point({ kind: 'free', pos: h.pos, plane: 'sheet' }) : null
     case 'point':
+    case 'plane':
       return null
   }
 }
@@ -237,6 +240,9 @@ export const useStore = create<State>((set, get) => {
           get().addItems([p])
           pick = { kind: 'point', ref: p.id }
         }
+      } else if (slot === 'plane') {
+        if (h.kind === 'face') pick = { kind: 'plane', ref: `f${h.face}` }
+        else if (h.kind === 'plane') pick = { kind: 'plane', ref: h.ref }
       } else if (h.kind === 'line') pick = { kind: 'line', ref: h.ref }
       else if (h.kind === 'circle') pick = { kind: 'circle', ref: h.ref }
       else if (h.kind === 'face') pick = { kind: 'face', face: h.face }

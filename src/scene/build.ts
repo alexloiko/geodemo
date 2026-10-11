@@ -8,6 +8,7 @@ import {
   DEFAULT_COLOR,
   type Doc,
   type Item,
+  type PlaneDef,
   type PlaneItem,
   type PointItem,
   type PointRef,
@@ -57,26 +58,32 @@ export function makeIntersection(
   }
 }
 
-/**
- * Plane through three points plus a point item for every section vertex that
- * is not already a vertex or an existing point. Returns [] for collinear points.
- */
+/** Plane through three points, with its section points (see makePlaneItems). */
 export function makePlane(doc: Doc, a: PointRef, b: PointRef, c: PointRef, extend = false): Item[] {
   const ev = evaluate(doc)
   const [pa, pb, pc] = [ev.points.get(a), ev.points.get(b), ev.points.get(c)]
   if (!pa || !pb || !pc || !planeFrom3(pa, pb, pc)) return []
+  return makePlaneItems(doc, { kind: 'three', a, b, c }, extend)
+}
+
+/**
+ * Plane item plus a point item for every section vertex that is not already a
+ * vertex or an existing point. Returns [] when the plane cannot be built.
+ */
+export function makePlaneItems(doc: Doc, def: PlaneDef, extend = false): Item[] {
+  const ev = evaluate(doc)
   const plane: PlaneItem = {
     id: newId('pl'),
     type: 'plane',
-    a,
-    b,
-    c,
+    def,
     extend,
     color: DEFAULT_COLOR.plane,
     visible: true,
   }
   const withPlane: Doc = { ...doc, items: [...doc.items, plane] }
-  const sec = evaluate(withPlane).planes.get(plane.id)?.section ?? []
+  const evPlane = evaluate(withPlane).planes.get(plane.id)
+  if (!evPlane) return []
+  const sec = evPlane.section
   const tol = ev.tol
   const existing = [...ev.points.values()]
   const out: Item[] = [plane]

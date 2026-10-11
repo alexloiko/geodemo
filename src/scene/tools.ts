@@ -1,9 +1,9 @@
 import { tangencyPoints } from '../geometry/circle'
-import { distToLine, pointAt } from '../geometry/lines'
+import { distToLine, foot, linePlane, planePlane, pointAt } from '../geometry/lines'
 import { planeFrom3, signedDist } from '../geometry/plane'
 import { type Vec3, dist } from '../geometry/vec'
 import type { DictKey } from '../i18n/en'
-import { makePlane } from './build'
+import { makePlane, makePlaneItems } from './build'
 import { type Evaluated, meetPoints, planesContaining, resolveLine, resolvePlane } from './evaluate'
 import { labelsFromA, nextLabel } from './labels'
 import {
@@ -44,15 +44,23 @@ export type ToolId =
   | 'ticks'
   | 'plane'
   | 'face'
+  | 'trace'
+  | 'planesMeet'
+  | 'parallelPlane'
+  | 'perpPlane'
+  | 'lineAngle'
+  | 'planePerpLine'
 
 /** What a tool expects to be clicked next. `curve` = line or circle. */
-export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face'
+export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face' | 'plane'
 
 export type Pick =
   | { kind: 'point'; ref: PointRef }
   | { kind: 'line'; ref: LineRef }
   | { kind: 'circle'; ref: string }
   | { kind: 'face'; face: number }
+  /** A plane: "f<face>" or a plane item id. */
+  | { kind: 'plane'; ref: PlaneRef }
 
 export interface ToolOptions {
   radius: number
@@ -75,7 +83,7 @@ export type BuildResult =
   | { error: DictKey }
   | { choosePlane: PlaneRef[]; build: (plane: PlaneRef) => BuildResult }
 
-export type ToolGroup = 'basic' | 'construct' | 'circles' | 'marks' | 'solid'
+export type ToolGroup = 'basic' | 'construct' | 'triangle' | 'circles' | 'transform' | 'measure' | 'space'
 
 export interface ToolDef {
   id: ToolId
@@ -143,6 +151,18 @@ function withPlane(ctx: BuildCtx, pts: Vec3[], f: (plane: PlaneRef) => BuildResu
 
 const P = (ctx: BuildCtx, r: PointRef) => ctx.ev.points.get(r)!
 
+/** An existing point at this position (so constructions do not duplicate vertices). */
+function pointAtPos(ctx: BuildCtx, p: Vec3): PointRef | undefined {
+  for (const [ref, q] of ctx.ev.points) if (dist(p, q) < ctx.ev.tol * 10) return ref
+  return undefined
+}
+
+/** Foot of the perpendicular from q to a plane. */
+const projOn = (pl: { n: Vec3; d: number }, q: Vec3): Vec3 => {
+  const s = pl.n[0] * q[0] + pl.n[1] * q[1] + pl.n[2] * q[2] - pl.d
+  return [q[0] - pl.n[0] * s, q[1] - pl.n[1] * s, q[2] - pl.n[2] * s]
+}
+
 // ---------------------------------------------------------------------------
 // tool table
 
@@ -193,9 +213,11 @@ export const TOOLS: ToolDef[] = [
       const mk = pointFactory(ctx)
       if (distToLine(l, P(ctx, q)) > ctx.ev.tol * 10) {
         // From a point off the line: unique perpendicular through the foot H.
-        const h = mk({ kind: 'foot', point: q, line: L }, 'H')
         const perp = line({ kind: 'perpendicular', point: q, line: L })
-        return { items: [perp, h, mark({ kind: 'right', at: h.id, l1: L, l2: perp.id, p2: q })] }
+        const existing = pointAtPos(ctx, foot(l, P(ctx, q)))
+        const h = existing ? null : mk({ kind: 'foot', point: q, line: L }, 'H')
+        const at = existing ?? h!.id
+        return { items: [perp, ...(h ? [h] : []), mark({ kind: 'right', at, l1: L, l2: perp.id, p2: q })] }
       }
       return withPlane(ctx, [P(ctx, q), ...lineSpan(ctx, L)], (plane) => {
         const perp = line({ kind: 'perpendicular', point: q, line: L, plane })
@@ -317,7 +339,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'angle',
-    group: 'marks',
+    group: 'measure',
     slots: ['point', 'point', 'point'],
     build: (_ctx, [ap, op, bp]) => ({
       items: [
@@ -327,7 +349,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'ratio',
-    group: 'marks',
+    group: 'measure',
     slots: ['point', 'point'],
     build: (ctx, [ap, bp]) => ({
       items: [{ id: newId('r'), type: 'ratio', a: refOf(ap), b: refOf(bp), text: ctx.opts.ratioText, color: DEFAULT_COLOR.ratio, visible: true }],
@@ -335,13 +357,13 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'ticks',
-    group: 'marks',
+    group: 'measure',
     slots: ['point', 'point'],
     build: (ctx, [ap, bp]) => ({ items: [mark({ kind: 'ticks', a: refOf(ap), b: refOf(bp), count: ctx.opts.ticks })] }),
   },
   {
     id: 'plane',
-    group: 'solid',
+    group: 'space',
     solidOnly: true,
     slots: ['point', 'point', 'point'],
     build: (ctx, [a, b, c]) => {
@@ -351,7 +373,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'face',
-    group: 'solid',
+    group: 'space',
     solidOnly: true,
     slots: ['face'],
     build: (_ctx, [f]) => ({
@@ -360,9 +382,118 @@ export const TOOLS: ToolDef[] = [
   },
 ]
 
+TOOLS.push(
+  {
+    id: 'trace',
+    group: 'space',
+    solidOnly: true,
+    slots: ['line', 'plane'],
+    build: (ctx, [lp, pp]) => {
+      const [line, plane] = [refOf(lp), refOf(pp)]
+      const l = resolveLine(ctx.ev, line)
+      const pl = resolvePlane(ctx.ev, plane)
+      if (!l || !pl || !linePlane(l, pl)) return { error: 'err.parallelPlane' }
+      return { items: [pointFactory(ctx)({ kind: 'linePlane', line, plane })] }
+    },
+  },
+  {
+    id: 'planesMeet',
+    group: 'space',
+    solidOnly: true,
+    slots: ['plane', 'plane'],
+    build: (ctx, [a, b]) => {
+      const [p1, p2] = [refOf(a), refOf(b)]
+      const [x, y] = [resolvePlane(ctx.ev, p1), resolvePlane(ctx.ev, p2)]
+      if (!x || !y || !planePlane(x, y)) return { error: 'err.parallelPlanes' }
+      return { items: [line({ kind: 'planePlane', p1, p2 })] }
+    },
+  },
+  {
+    id: 'parallelPlane',
+    group: 'space',
+    solidOnly: true,
+    slots: ['point', 'plane'],
+    build: (ctx, [pp, pl]) => {
+      const items = makePlaneItems(ctx.doc, { kind: 'parallel', point: refOf(pp), plane: refOf(pl) })
+      return items.length ? { items } : { error: 'err.generic' }
+    },
+  },
+  {
+    id: 'planePerpLine',
+    group: 'space',
+    solidOnly: true,
+    slots: ['point', 'line'],
+    build: (ctx, [pp, lp]) => {
+      const items = makePlaneItems(ctx.doc, { kind: 'perpToLine', point: refOf(pp), line: refOf(lp) })
+      return items.length ? { items } : { error: 'err.generic' }
+    },
+  },
+  {
+    id: 'perpPlane',
+    group: 'space',
+    solidOnly: true,
+    slots: ['point', 'plane'],
+    build: (ctx, [pp, pl]) => {
+      const [point, plane] = [refOf(pp), refOf(pl)]
+      const perp = line({ kind: 'perpToPlane', point, plane })
+      const p = resolvePlane(ctx.ev, plane)
+      if (!p) return { error: 'err.generic' }
+      if (Math.abs(signedDist(p, P(ctx, point))) < ctx.ev.tol * 10)
+        return { items: [perp, mark({ kind: 'rightPlane', at: point, line: perp.id, plane })] }
+      const existing = pointAtPos(ctx, projOn(p, P(ctx, point)))
+      const h = existing ? null : pointFactory(ctx)({ kind: 'projPlane', point, plane }, 'H')
+      const at = existing ?? h!.id
+      return { items: [perp, ...(h ? [h] : []), mark({ kind: 'rightPlane', at, line: perp.id, plane, toward: point })] }
+    },
+  },
+  {
+    id: 'lineAngle',
+    group: 'space',
+    solidOnly: true,
+    slots: ['line', 'plane'],
+    build: (ctx, [lp, pp]) => {
+      const [lineRef, plane] = [refOf(lp), refOf(pp)]
+      const l = resolveLine(ctx.ev, lineRef)
+      const pl = resolvePlane(ctx.ev, plane)
+      if (!l || !pl) return { error: 'err.generic' }
+      const o = linePlane(l, pl)
+      if (!o) return { error: 'err.parallelPlane' }
+      if (!l.a || !l.b) return { error: 'err.needTwoPoints' }
+      // The defining point farther from the plane is the one we project.
+      const a = Math.abs(signedDist(pl, P(ctx, l.a))) >= Math.abs(signedDist(pl, P(ctx, l.b))) ? l.a : l.b
+      if (Math.abs(signedDist(pl, P(ctx, a))) < ctx.ev.tol * 10) return { error: 'err.lineInPlane' }
+      const mk = pointFactory(ctx)
+      const existing = [...ctx.ev.points.entries()].find(([, q]) => dist(q, o) < ctx.ev.tol * 10)
+      const items: Item[] = []
+      let oRef = existing?.[0]
+      if (!oRef) {
+        const op = mk({ kind: 'linePlane', line: lineRef, plane }, 'O')
+        items.push(op)
+        oRef = op.id
+      }
+      let hRef = pointAtPos(ctx, projOn(pl, P(ctx, a)))
+      if (!hRef) {
+        const h = mk({ kind: 'projPlane', point: a, plane }, 'H')
+        items.push(h)
+        hRef = h.id
+      }
+      const seg = (x: PointRef, y: PointRef, aux: boolean, color: string): Item => ({
+        id: newId('s'), type: 'segment', a: x, b: y, aux, color, visible: true,
+      })
+      items.push(
+        seg(a, hRef, true, AUX_COLOR),
+        seg(oRef, hRef, false, DEFAULT_COLOR.face),
+        mark({ kind: 'right', at: hRef, l1: pairRef(a, hRef), l2: pairRef(oRef, hRef), p1: a, p2: oRef }),
+        { id: newId('a'), type: 'angle', a, vertex: oRef, b: hRef, arcs: 1, showValue: true, color: DEFAULT_COLOR.angle, visible: true },
+      )
+      return { items }
+    },
+  },
+)
+
 export const toolById = (id: ToolId): ToolDef => TOOLS.find((t) => t.id === id)!
 
-export const GROUPS: ToolGroup[] = ['basic', 'construct', 'circles', 'marks', 'solid']
+export const GROUPS: ToolGroup[] = ['basic', 'construct', 'triangle', 'circles', 'transform', 'measure', 'space']
 
 /** Next expected slot for a tool given the picks so far, or null when complete. */
 export function nextSlot(tool: ToolDef, picks: Pick[]): Slot | null {

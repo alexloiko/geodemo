@@ -115,7 +115,7 @@ and in space (in the plane of the three points).
 
 ---
 
-## Phase 4 — transformations
+## Phase 4 — transformations (done)
 
 New slot **object**: a point, segment, line, circle or polygon. Tools:
 
@@ -128,7 +128,8 @@ New slot **object**: a point, segment, line, circle or polygon. Tools:
 | Homothety | object, centre | coefficient k |
 
 Images keep their structure: a polygon gives the polygon of image points, a segment two image
-points and a segment, a circle a circle. Image points are labelled with a prime (`A → A′`).
+points and a segment, a circle a circle. Image points are labelled with a prime (`A → A′`, then
+`A″`, `A‴`) and drawn in purple. The vector item needed for translations is part of this phase.
 
 ```ts
 Transform =

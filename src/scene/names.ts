@@ -1,7 +1,18 @@
 import type { DictKey } from '../i18n/en'
 import type { Evaluated } from './evaluate'
 import { prettyLabel } from './labels'
-import { type Doc, type Item, type LineRef, type PlaneDef, type PlaneRef, SHEET, parseFaceRef, parsePairRef, parseRimRef } from './model'
+import {
+  type Doc,
+  type Item,
+  type LineRef,
+  type PlaneDef,
+  type PlaneRef,
+  SHEET,
+  type Transform,
+  parseFaceRef,
+  parsePairRef,
+  parseRimRef,
+} from './model'
 
 type T = (key: DictKey, vars?: Record<string, string>) => string
 
@@ -77,6 +88,25 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
     return (it && planeLetters.get(it.id)) ?? 'α'
   }
 
+  const vector = (id: string) => {
+    const it = byId.get(id)
+    return it?.type === 'vector' ? `${pair(it.a, it.b)}⃗` : '?'
+  }
+  const tfText = (tf: Transform): string => {
+    switch (tf.kind) {
+      case 'pointReflect':
+        return t('tf.pointReflect', { c: point(tf.center) })
+      case 'lineReflect':
+        return t('tf.lineReflect', { l: line(tf.line) })
+      case 'rotate':
+        return t('tf.rotate', { c: point(tf.center), a: String(tf.deg) })
+      case 'translate':
+        return t('tf.translate', { v: vector(tf.vector) })
+      case 'dilate':
+        return t('tf.dilate', { c: point(tf.center), k: String(tf.k) })
+    }
+  }
+
   /** Short name shown before the description ("a", "ω", "K"), or null. */
   const nameOf = (it: Item): string | null =>
     it.type === 'line' ? (lineNames.get(it.id) ?? null) : it.type === 'circle' ? (circleNames.get(it.id) ?? null) : null
@@ -124,6 +154,8 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
             return t(`desc.${d.kind}`, { t: point(d.a) + point(d.b) + point(d.c) })
           case 'center':
             return t('desc.center', { c: circle(d.circle) })
+          case 'image':
+            return `${point(d.src)} → ${tfText(d.tf)}`
         }
         break
       }
@@ -148,6 +180,8 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
             return t('desc.planePlane', { a: plane(d.p1), b: plane(d.p2) })
           case 'perpToPlane':
             return t('desc.perpToPlane', { p: point(d.point), q: plane(d.plane) })
+          case 'image':
+            return `${line(d.src)} → ${tfText(d.tf)}`
         }
         break
       }
@@ -156,6 +190,7 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
         if (d.kind === 'centerPoint') return t('desc.circleCP', { c: point(d.center), p: point(d.through) })
         if (d.kind === 'threePoints') return t('desc.circle3', { a: point(d.a), b: point(d.b), c: point(d.c) })
         if (d.kind === 'incircle') return t('desc.incircle', { t: point(d.a) + point(d.b) + point(d.c) })
+        if (d.kind === 'image') return `${circle(d.src)} → ${tfText(d.tf)}`
         return t('desc.circleCR', { c: point(d.center), r: String(d.r) })
       }
       case 'polygon':
@@ -178,11 +213,13 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
         return face(it.face)
       case 'ratio':
         return `${pair(it.a, it.b)} = ${it.text}`
+      case 'vector':
+        return vector(it.id)
     }
     return ''
   }
 
-  return { point, line, circle, plane, face, nameOf, describe }
+  return { point, line, circle, plane, face, vector, nameOf, describe }
 }
 
 export function ratioOf(t: number): string {

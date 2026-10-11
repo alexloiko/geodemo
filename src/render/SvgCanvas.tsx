@@ -138,9 +138,11 @@ export function SvgCanvas() {
   // ---- tool state --------------------------------------------------------
   const slot = tool === 'select' ? null : nextSlot(toolById(tool), picks)
   const wantsPoint = slot === 'point'
-  const wantsLine = slot === 'line' || slot === 'curve'
-  const wantsCircle = slot === 'circle' || slot === 'curve'
+  const wantsLine = slot === 'line' || slot === 'curve' || slot === 'object'
+  const wantsCircle = slot === 'circle' || slot === 'curve' || slot === 'object'
   const wantsPlane = slot === 'plane'
+  const wantsObject = slot === 'object'
+  const wantsVector = slot === 'vector'
   const pickedRefs = new Set(picks.map((p) => (p.kind === 'face' ? `f${p.face}` : p.ref)))
   const pickedFace = (f: number) => pickedRefs.has(`f${f}`)
 
@@ -481,11 +483,16 @@ export function SvgCanvas() {
         e.stopPropagation()
         return st.hit({ kind: 'plane', ref: it.id })
       }
+      if (wantsObject && it.type === 'polygon') {
+        e.stopPropagation()
+        return st.hit({ kind: 'polygon', ref: it.id })
+      }
       if (tool !== 'select') return
       e.stopPropagation()
       st.select(it.id, additive(e))
     }
-    const selectable = tool === 'select' || (wantsPlane && it.type === 'plane') ? 'clickable' : undefined
+    const selectable =
+      tool === 'select' || (wantsPlane && it.type === 'plane') || (wantsObject && it.type === 'polygon') ? 'clickable' : undefined
     switch (it.type) {
       case 'face': {
         const pts = solid?.faces[it.face]?.map((i) => solid.vertices[i].pos)
@@ -632,6 +639,38 @@ export function SvgCanvas() {
         )
         break
       }
+      case 'vector': {
+        const [a, b] = ev.vectors.get(it.id)!
+        if (sel) halo(a, b, `${it.id}-u`)
+        if (pend) halo(a, b, `${it.id}-p`, PENDING)
+        strokes.push(...drawPieces(a, b, it.color, 2.2, it.id, op))
+        const [sa, sb] = [S(a), S(b)]
+        const l = Math.hypot(sb[0] - sa[0], sb[1] - sa[1]) || 1
+        const [ux, uy] = [(sb[0] - sa[0]) / l, (sb[1] - sa[1]) / l]
+        const head = [
+          [sb[0], sb[1]],
+          [sb[0] - ux * 13 - uy * 5, sb[1] - uy * 13 + ux * 5],
+          [sb[0] - ux * 13 + uy * 5, sb[1] - uy * 13 - ux * 5],
+        ] as P2[]
+        marks.push(<polygon key={`${it.id}-h`} points={ptsAttr(head)} fill={it.color} opacity={op} pointerEvents="none" />)
+        const active = tool === 'select' || wantsVector
+        hits.push(
+          <line
+            key={`h${it.id}`}
+            x1={sa[0]}
+            y1={sa[1]}
+            x2={sb[0]}
+            y2={sb[1]}
+            className={active ? 'hit-line' : 'hit-line off'}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              if (tool === 'select') st.select(it.id, additive(e))
+              else if (wantsVector) st.hit({ kind: 'vector', ref: it.id })
+            }}
+          />,
+        )
+        break
+      }
       case 'ratio': {
         const a = S(ev.points.get(it.a)!)
         const b = S(ev.points.get(it.b)!)
@@ -649,7 +688,7 @@ export function SvgCanvas() {
     ...doc.items.filter((i): i is PointItem => i.type === 'point').map((i) => ({ ref: i.id, item: i })),
   ]
   const labelCenter: P2 = sheet ? sheetLabelAnchor() : centerS
-  const pointsActive = tool === 'select' || wantsPoint
+  const pointsActive = tool === 'select' || wantsPoint || wantsObject
   for (const { ref, item } of pointRefs) {
     const p = ev.points.get(ref)
     if (!p) continue

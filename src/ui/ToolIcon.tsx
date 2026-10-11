@@ -221,4 +221,49 @@ const ICONS: Record<ToolId, React.ReactNode> = {
       {dot(12, 12, true)}
     </>
   ),
+  reflectPoint: (
+    <>
+      <path d="M3 8l5-4 2 6z" />
+      <path d="M21 16l-5 4-2-6z" opacity={0.6} />
+      {dot(12, 12)}
+    </>
+  ),
+  reflectLine: (
+    <>
+      <path d="M12 2v20" strokeDasharray="2.5 2" />
+      <path d="M9 6L3 9l6 6z" />
+      <path d="M15 6l6 3-6 6z" opacity={0.6} />
+    </>
+  ),
+  rotate: (
+    <>
+      <path d="M5 13l4-7 3 6z" />
+      <path d="M19 11a7 7 0 0 1-9 7" />
+      <path d="M10 18l2-2.5M10 18l3 1" />
+      {dot(14, 12)}
+    </>
+  ),
+  translate: (
+    <>
+      <path d="M3 10l4-6 3 6z" />
+      <path d="M14 20l4-6 3 6z" opacity={0.6} />
+      <path d="M8 13l8 3" />
+      <path d="M16 16l-3.2.4M16 16l-2-2.5" />
+    </>
+  ),
+  dilate: (
+    <>
+      {dot(3, 20)}
+      <path d="M3 20L21 4M3 20l16 0" strokeDasharray="2 2" strokeWidth={1} />
+      <path d="M8 16l3-3 1 4z" />
+      <path d="M13 12l6-6 2 8z" opacity={0.6} />
+    </>
+  ),
+  vector: (
+    <>
+      <path d="M4 19L19 5" />
+      <path d="M19 5l-6 1.5M19 5l-1.5 6" />
+      {dot(4, 19)}
+    </>
+  ),
 }

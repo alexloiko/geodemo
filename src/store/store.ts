@@ -44,6 +44,8 @@ export type CanvasHit =
   | { kind: 'surface'; u: number; w: number }
   /** A section (plane item) fill. */
   | { kind: 'plane'; ref: PlaneRef }
+  | { kind: 'polygon'; ref: string }
+  | { kind: 'vector'; ref: string }
   /** Empty space; pos is set on the sheet. */
   | { kind: 'empty'; pos: Vec3 | null }
 
@@ -128,6 +130,8 @@ function materializePoint(doc: Doc, ev: Evaluated, h: CanvasHit): PointItem | nu
       return h.pos ? point({ kind: 'free', pos: h.pos, plane: 'sheet' }) : null
     case 'point':
     case 'plane':
+    case 'polygon':
+    case 'vector':
       return null
   }
 }
@@ -240,6 +244,13 @@ export const useStore = create<State>((set, get) => {
           get().addItems([p])
           pick = { kind: 'point', ref: p.id }
         }
+      } else if (slot === 'object') {
+        if (h.kind === 'point') pick = { kind: 'point', ref: h.ref }
+        else if (h.kind === 'line') pick = { kind: 'line', ref: h.ref }
+        else if (h.kind === 'circle') pick = { kind: 'circle', ref: h.ref }
+        else if (h.kind === 'polygon') pick = { kind: 'polygon', ref: h.ref }
+      } else if (slot === 'vector') {
+        if (h.kind === 'vector') pick = { kind: 'vector', ref: h.ref }
       } else if (slot === 'plane') {
         if (h.kind === 'face') pick = { kind: 'plane', ref: `f${h.face}` }
         else if (h.kind === 'plane') pick = { kind: 'plane', ref: h.ref }

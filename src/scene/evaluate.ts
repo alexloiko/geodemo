@@ -1,5 +1,6 @@
 import {
   type Circle3,
+  planeBasis,
   circlePlanePoints,
   sphereSection,
   circleCenterPoint,
@@ -28,7 +29,8 @@ import { type SectionVertex, enclosingBox, section } from '../geometry/section'
 import { rims, surfacePoint } from '../geometry/revolution'
 import { buildSolid } from '../geometry/solids'
 import { bisectorFoot, centroid3, incenter, incircle, orthocenter } from '../geometry/triangle'
-import { type Vec3, cross, dist, dot, len, lerp, normalize, scale, sub } from '../geometry/vec'
+import { type Tf, applyTf } from '../geometry/transform'
+import { type Vec3, add, cross, dist, dot, len, lerp, normalize, scale, sub } from '../geometry/vec'
 import {
   type CircleItem,
   type Doc,
@@ -39,6 +41,7 @@ import {
   type PointItem,
   type PointRef,
   SHEET,
+  type Transform,
   parseFaceRef,
   parsePairRef,
   rimRef,
@@ -71,6 +74,8 @@ export interface Evaluated {
   /** Segment and line items. */
   lines: Map<string, EvLine>
   circles: Map<string, Circle3>
+  /** Vector items: [tail, head]. */
+  vectors: Map<string, [Vec3, Vec3]>
   /** Items whose geometry could not be computed (e.g. skew lines). */
   invalid: Set<string>
   /** Typical size of the scene, for tolerances. */
@@ -90,6 +95,7 @@ export function evaluate(doc: Doc): Evaluated {
     planes: new Map(),
     lines: new Map(),
     circles: new Map(),
+    vectors: new Map(),
     invalid: new Set(),
     scaleRef,
     tol: 1e-6 * scaleRef,
@@ -160,6 +166,12 @@ export function evaluate(doc: Doc): Evaluated {
       case 'ratio':
         ok = ev.points.has(it.a) && ev.points.has(it.b)
         break
+      case 'vector': {
+        const [a, b] = [ev.points.get(it.a), ev.points.get(it.b)]
+        if (a && b) ev.vectors.set(it.id, [a, b])
+        else ok = false
+        break
+      }
       case 'mark':
         ok = true
         break
@@ -179,6 +191,33 @@ export function evaluate(doc: Doc): Evaluated {
       pl.section = pl.section.map((v, i) => (pl.refs[i] ? { ...v, pos: ev.points.get(pl.refs[i]!)! } : v))
   }
   return ev
+}
+
+/** Resolve a transformation's refs; null when something is missing. */
+export function resolveTf(ev: Evaluated, tf: Transform): Tf | null {
+  const P = (r: PointRef) => ev.points.get(r)
+  switch (tf.kind) {
+    case 'pointReflect': {
+      const c = P(tf.center)
+      return c ? { kind: 'pointReflect', c } : null
+    }
+    case 'lineReflect': {
+      const l = resolveLine(ev, tf.line)
+      return l ? { kind: 'lineReflect', l } : null
+    }
+    case 'rotate': {
+      const [c, pl] = [P(tf.center), resolvePlane(ev, tf.plane)]
+      return c && pl ? { kind: 'rotate', c, axis: pl.n, rad: (tf.deg * Math.PI) / 180 } : null
+    }
+    case 'translate': {
+      const v = ev.vectors.get(tf.vector)
+      return v ? { kind: 'translate', v: sub(v[1], v[0]) } : null
+    }
+    case 'dilate': {
+      const c = P(tf.center)
+      return c ? { kind: 'dilate', c, k: tf.k } : null
+    }
+  }
 }
 
 /** A line item, a segment item or an implicit "a|b" line. */
@@ -273,6 +312,12 @@ function evalLine(it: LineItem, ev: Evaluated): EvLine | null {
       const l = a && b ? planePlane(a, b) : null
       return l ? { ...l, extent } : null
     }
+    case 'image': {
+      const [l, tf] = [resolveLine(ev, d.src), resolveTf(ev, d.tf)]
+      if (!l || !tf) return null
+      const p = applyTf(tf, l.p)
+      return { p, d: sub(applyTf(tf, pointAt(l, 1)), p), extent: l.extent === 'segment' ? 'line' : l.extent }
+    }
     case 'perpToPlane': {
       const [q, pl] = [P(d.point), resolvePlane(ev, d.plane)]
       if (!q || !pl) return null
@@ -310,6 +355,15 @@ function evalCircle(it: CircleItem, ev: Evaluated): Circle3 | null {
     case 'incircle': {
       const [a, b, c] = [P(d.a), P(d.b), P(d.c)]
       return a && b && c ? incircle(a, b, c) : null
+    }
+    case 'image': {
+      const [src, tf] = [ev.circles.get(d.src), resolveTf(ev, d.tf)]
+      if (!src || !tf) return null
+      // Similarity: map the centre, the normal direction and one point of the circle.
+      const c = applyTf(tf, src.c)
+      const n = normalize(sub(applyTf(tf, add(src.c, src.n)), c))
+      const u = planeBasis(src.n)[0]
+      return { c, n, r: dist(c, applyTf(tf, add(src.c, scale(u, src.r)))) }
     }
   }
 }
@@ -399,6 +453,10 @@ function evalPoint(it: PointItem, ev: Evaluated): Vec3 | null {
     }
     case 'center':
       return ev.circles.get(d.circle)?.c ?? null
+    case 'image': {
+      const [p, tf] = [P(d.src), resolveTf(ev, d.tf)]
+      return p && tf ? applyTf(tf, p) : null
+    }
     case 'circlePlane': {
       const [c, pl] = [ev.circles.get(d.circle), ev.planes.get(d.plane)]
       return c && pl ? (circlePlanePoints(c, pl.plane, ev.tol)[d.index] ?? null) : null

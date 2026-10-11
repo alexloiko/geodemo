@@ -27,6 +27,23 @@ export const parseRimRef = (r: string): number | null => (/^rim\d+$/.test(r) ? N
 export const faceRef = (f: number): PlaneRef => `f${f}`
 export const parseFaceRef = (r: PlaneRef): number | null => (/^f\d+$/.test(r) ? Number(r.slice(1)) : null)
 
+/** Transformations; `vector` is a vector item id. */
+export type Transform =
+  | { kind: 'pointReflect'; center: PointRef }
+  | { kind: 'lineReflect'; line: LineRef }
+  | { kind: 'rotate'; center: PointRef; deg: number; plane: PlaneRef }
+  | { kind: 'translate'; vector: string }
+  | { kind: 'dilate'; center: PointRef; k: number }
+
+export const tfRefs = (tf: Transform): string[] =>
+  tf.kind === 'pointReflect' || tf.kind === 'dilate'
+    ? [tf.center]
+    : tf.kind === 'rotate'
+      ? [tf.center, tf.plane]
+      : tf.kind === 'lineReflect'
+        ? [tf.line]
+        : [tf.vector]
+
 export type PointDef =
   /** Point on line a–b at parameter t (0 = a, 1 = b); `line` allows t outside [0, 1]. */
   | { kind: 'onSegment'; a: PointRef; b: PointRef; t: number; line?: boolean }
@@ -58,6 +75,8 @@ export type PointDef =
   | { kind: 'bisectorFoot' | 'incenter' | 'centroid' | 'orthocenter'; a: PointRef; b: PointRef; c: PointRef }
   /** Centre of a circle. */
   | { kind: 'center'; circle: CircleRef }
+  /** Image of a point under a transformation. */
+  | { kind: 'image'; src: PointRef; tf: Transform }
 
 export type LineDef =
   | { kind: 'through'; a: PointRef; b: PointRef }
@@ -71,6 +90,8 @@ export type LineDef =
   | { kind: 'planePlane'; p1: PlaneRef; p2: PlaneRef }
   /** Line through a point perpendicular to a plane. */
   | { kind: 'perpToPlane'; point: PointRef; plane: PlaneRef }
+  /** Image of a line item under a transformation. */
+  | { kind: 'image'; src: LineRef; tf: Transform }
 
 export type PlaneDef =
   | { kind: 'three'; a: PointRef; b: PointRef; c: PointRef }
@@ -84,6 +105,7 @@ export type CircleDef =
   | { kind: 'threePoints'; a: PointRef; b: PointRef; c: PointRef }
   | { kind: 'centerRadius'; center: PointRef; r: number; plane: PlaneRef }
   | { kind: 'incircle'; a: PointRef; b: PointRef; c: PointRef }
+  | { kind: 'image'; src: CircleRef; tf: Transform }
 
 export type MarkDef =
   /** Right-angle square at `at` between lines l1 and l2 (towards `p1` / `p2` when given). */
@@ -159,6 +181,13 @@ export interface FaceItem extends Base {
   face: number
 }
 
+/** Vector a → b (drawn with an arrow head). */
+export interface VectorItem extends Base {
+  type: 'vector'
+  a: PointRef
+  b: PointRef
+}
+
 export interface RatioItem extends Base {
   type: 'ratio'
   a: PointRef
@@ -177,6 +206,7 @@ export type Item =
   | PlaneItem
   | FaceItem
   | RatioItem
+  | VectorItem
 export type ItemType = Item['type']
 
 export interface Doc {
@@ -198,7 +228,10 @@ export const DEFAULT_COLOR: Record<ItemType, string> = {
   plane: '#2f45d8',
   face: '#2e9a5a',
   ratio: '#d1382c',
+  vector: '#111111',
 }
+/** Images under transformations get their own colour. */
+export const IMAGE_COLOR = '#8e44ad'
 export const AUX_COLOR = '#8a8a8a'
 
 /** All refs (point / line / circle / plane) mentioned by an item. */
@@ -259,6 +292,9 @@ export function refsOf(item: Item): string[] {
         case 'center':
           add(d.circle)
           break
+        case 'image':
+          add(d.src, ...tfRefs(d.tf))
+          break
       }
       break
     }
@@ -289,12 +325,16 @@ export function refsOf(item: Item): string[] {
         case 'perpToPlane':
           add(d.point, d.plane)
           break
+        case 'image':
+          add(d.src, ...tfRefs(d.tf))
+          break
       }
       break
     }
     case 'circle': {
       const d = item.def
-      if (d.kind === 'threePoints' || d.kind === 'incircle') add(d.a, d.b, d.c)
+      if (d.kind === 'image') add(d.src, ...tfRefs(d.tf))
+      else if (d.kind === 'threePoints' || d.kind === 'incircle') add(d.a, d.b, d.c)
       else if (d.kind === 'centerPoint') add(d.center, d.through, d.plane)
       else add(d.center, d.plane)
       break
@@ -315,6 +355,7 @@ export function refsOf(item: Item): string[] {
       break
     case 'segment':
     case 'ratio':
+    case 'vector':
       add(item.a, item.b)
       break
     case 'plane': {

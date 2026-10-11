@@ -16,7 +16,7 @@ import { ToolIcon } from './ToolIcon'
 const FORMS_3D: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
 const FORMS_2D: FormKind[] = ['segment', 'intersection', 'ratio']
 const FORMS_ROUND: FormKind[] = ['segment', 'intersection', 'plane', 'ratio']
-const TYPES: ItemType[] = ['point', 'segment', 'line', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio']
+const TYPES: ItemType[] = ['point', 'segment', 'line', 'vector', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio']
 const MODES: DisplayMode[] = ['all', 'focus', 'selected']
 
 export function Sidebar() {
@@ -176,7 +176,11 @@ function ToolsPanel() {
           ? names.circle(p.ref)
           : p.kind === 'face'
             ? names.face(p.face)
-            : names.plane(p.ref)
+            : p.kind === 'vector'
+              ? names.vector(p.ref)
+              : p.kind === 'polygon'
+                ? names.describe(doc.items.find((i) => i.id === p.ref)!)
+                : names.plane(p.ref)
 
   const toolButton = (d: (typeof TOOLS)[number]) => (
     <button key={d.id} className={`tool ${tool === d.id ? 'on' : ''}`} onClick={() => st.setTool(d.id)} title={t(`hint.${d.id}` as DictKey)}>
@@ -224,8 +228,20 @@ function ToolsPanel() {
         )}
       </div>
 
-      {(tool === 'circleCR' || tool === 'ratio' || tool === 'ticks') && (
+      {(tool === 'circleCR' || tool === 'ratio' || tool === 'ticks' || tool === 'rotate' || tool === 'dilate') && (
         <div className="tool-options">
+          {tool === 'rotate' && (
+            <label className="opt">
+              {t('opt.angle')}
+              <input type="number" step={15} value={opts.angle} onChange={(e) => st.setOpts({ angle: Number(e.target.value) || 0 })} />
+            </label>
+          )}
+          {tool === 'dilate' && (
+            <label className="opt">
+              {t('opt.k')}
+              <input type="number" step={0.5} value={opts.k} onChange={(e) => st.setOpts({ k: Number(e.target.value) || 1 })} />
+            </label>
+          )}
           {tool === 'circleCR' && (
             <label className="opt">
               {t('opt.radius')}

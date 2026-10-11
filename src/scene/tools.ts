@@ -5,7 +5,8 @@ import { type Vec3, dist, dot, sub } from '../geometry/vec'
 import { orthocenter } from '../geometry/triangle'
 import type { DictKey } from '../i18n/en'
 import { makePlane, makePlaneItems } from './build'
-import { type Evaluated, meetPoints, planesContaining, resolveLine, resolvePlane } from './evaluate'
+import { type Evaluated, meetPoints, planesContaining, resolveLine, resolvePlane, resolveTf } from './evaluate'
+import { applyTf } from '../geometry/transform'
 import { labelsFromA, nextLabel } from './labels'
 import {
   AUX_COLOR,
@@ -19,8 +20,11 @@ import {
   type PointDef,
   type PointItem,
   type PointRef,
+  IMAGE_COLOR,
+  type Transform,
   newId,
   pairRef,
+  parsePairRef,
 } from './model'
 
 export type ToolId =
@@ -59,9 +63,15 @@ export type ToolId =
   | 'centroid'
   | 'orthocenter'
   | 'center'
+  | 'reflectPoint'
+  | 'reflectLine'
+  | 'rotate'
+  | 'translate'
+  | 'dilate'
+  | 'vector'
 
 /** What a tool expects to be clicked next. `curve` = line or circle. */
-export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face' | 'plane'
+export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face' | 'plane' | 'object' | 'vector'
 
 export type Pick =
   | { kind: 'point'; ref: PointRef }
@@ -70,16 +80,22 @@ export type Pick =
   | { kind: 'face'; face: number }
   /** A plane: "f<face>" or a plane item id. */
   | { kind: 'plane'; ref: PlaneRef }
+  | { kind: 'polygon'; ref: string }
+  | { kind: 'vector'; ref: string }
 
 export interface ToolOptions {
   radius: number
+  /** Rotation angle in degrees. */
+  angle: number
+  /** Homothety coefficient. */
+  k: number
   ratioText: string
   ticks: number
   /** Plane for planar constructions on solids; 'auto' picks the face that contains the input. */
   workingPlane: PlaneRef | 'auto'
 }
 
-export const DEFAULT_OPTIONS: ToolOptions = { radius: 3, ratioText: 'x', ticks: 1, workingPlane: 'auto' }
+export const DEFAULT_OPTIONS: ToolOptions = { radius: 3, angle: 90, k: 2, ratioText: 'x', ticks: 1, workingPlane: 'auto' }
 
 export interface BuildCtx {
   doc: Doc
@@ -658,6 +674,109 @@ TOOLS.push(
   },
 )
 
+// ---------------------------------------------------------------------------
+// transformations
+
+/** A′, then A″, A‴ when earlier images already use the name. */
+function primedLabel(label: string, used: string[], fromA: boolean): string {
+  const base = label.replace(/[′″‴]+$/, '')
+  for (const mark of ['′', '″', '‴']) if (!used.includes(base + mark)) return base + mark
+  return nextLabel(used, { fromA })
+}
+
+/** Items for the image of a picked object: points get primed labels, structure is kept. */
+function imageOf(ctx: BuildCtx, obj: Pick, tf: Transform): BuildResult {
+  const rtf = resolveTf(ctx.ev, tf)
+  if (!rtf) return { error: 'err.generic' }
+  const used = [...ctx.ev.labels.values()]
+  const items: Item[] = []
+  const pointImage = (src: PointRef): PointRef => {
+    const pos = applyTf(rtf, P(ctx, src))
+    const existing = pointAtPos(ctx, pos)
+    if (existing) return existing
+    const made = items.find((i) => i.type === 'point' && i.def.kind === 'image' && i.def.src === src)
+    if (made) return made.id
+    const label = primedLabel(ctx.ev.labels.get(src) ?? 'P', used, labelsFromA(ctx.doc.solid))
+    used.push(label)
+    const p: PointItem = { id: newId('p'), type: 'point', label, color: IMAGE_COLOR, visible: true, def: { kind: 'image', src, tf } }
+    items.push(p)
+    return p.id
+  }
+  const segImage = (a: PointRef, b: PointRef) =>
+    items.push({ id: newId('s'), type: 'segment', a: pointImage(a), b: pointImage(b), aux: false, color: IMAGE_COLOR, visible: true })
+
+  switch (obj.kind) {
+    case 'point':
+      if (pointImage(obj.ref) && !items.length) return { error: 'err.alreadyThere' }
+      break
+    case 'line': {
+      const src = ctx.doc.items.find((i) => i.id === obj.ref)
+      const pair = parsePairRef(obj.ref)
+      if (pair) segImage(pair[0], pair[1])
+      else if (src?.type === 'segment') segImage(src.a, src.b)
+      else items.push({ ...line({ kind: 'image', src: obj.ref, tf }, src?.type === 'line' ? src.extent : 'line'), color: IMAGE_COLOR })
+      break
+    }
+    case 'circle':
+      items.push({ id: newId('c'), type: 'circle', def: { kind: 'image', src: obj.ref, tf }, color: IMAGE_COLOR, visible: true })
+      break
+    case 'polygon': {
+      const src = ctx.doc.items.find((i) => i.id === obj.ref)
+      if (src?.type !== 'polygon') return { error: 'err.generic' }
+      const pts = src.pts.map(pointImage)
+      items.push({ id: newId('g'), type: 'polygon', pts, color: IMAGE_COLOR, visible: true })
+      break
+    }
+    default:
+      return { error: 'err.generic' }
+  }
+  return { items }
+}
+
+TOOLS.push(
+  {
+    id: 'reflectPoint',
+    group: 'transform',
+    slots: ['object', 'point'],
+    build: (ctx, [obj, c]) => imageOf(ctx, obj, { kind: 'pointReflect', center: refOf(c) }),
+  },
+  {
+    id: 'reflectLine',
+    group: 'transform',
+    slots: ['object', 'line'],
+    build: (ctx, [obj, l]) => imageOf(ctx, obj, { kind: 'lineReflect', line: refOf(l) }),
+  },
+  {
+    id: 'rotate',
+    group: 'transform',
+    slots: ['object', 'point'],
+    build: (ctx, [obj, c]) =>
+      withPlane(ctx, [P(ctx, refOf(c))], (plane) =>
+        imageOf(ctx, obj, { kind: 'rotate', center: refOf(c), deg: ctx.opts.angle, plane }),
+      ),
+  },
+  {
+    id: 'translate',
+    group: 'transform',
+    slots: ['object', 'vector'],
+    build: (ctx, [obj, v]) => imageOf(ctx, obj, { kind: 'translate', vector: refOf(v) }),
+  },
+  {
+    id: 'dilate',
+    group: 'transform',
+    slots: ['object', 'point'],
+    build: (ctx, [obj, c]) => imageOf(ctx, obj, { kind: 'dilate', center: refOf(c), k: ctx.opts.k }),
+  },
+  {
+    id: 'vector',
+    group: 'measure',
+    slots: ['point', 'point'],
+    build: (_ctx, [a, b]) => ({
+      items: [{ id: newId('v'), type: 'vector', a: refOf(a), b: refOf(b), color: DEFAULT_COLOR.vector, visible: true }],
+    }),
+  },
+)
+
 export const toolById = (id: ToolId): ToolDef => TOOLS.find((t) => t.id === id)!
 
 export const GROUPS: ToolGroup[] = ['basic', 'construct', 'triangle', 'circles', 'transform', 'measure', 'space']
@@ -671,6 +790,7 @@ export function nextSlot(tool: ToolDef, picks: Pick[]): Slot | null {
 /** Does a pick satisfy a slot? */
 export function fits(slot: Slot, p: Pick): boolean {
   if (slot === 'curve') return p.kind === 'line' || p.kind === 'circle'
+  if (slot === 'object') return p.kind === 'point' || p.kind === 'line' || p.kind === 'circle' || p.kind === 'polygon'
   return slot === p.kind
 }
 

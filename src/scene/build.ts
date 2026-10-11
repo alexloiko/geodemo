@@ -18,14 +18,21 @@ export function usedLabels(doc: Doc): string[] {
   return [...evaluate(doc).labels.values()]
 }
 
-export function makePointOnSegment(doc: Doc, a: PointRef, b: PointRef, t: number, label?: string): PointItem {
+export function makePointOnSegment(
+  doc: Doc,
+  a: PointRef,
+  b: PointRef,
+  t: number,
+  label?: string,
+  line = false,
+): PointItem {
   return {
     id: newId('p'),
     type: 'point',
     label: label || nextLabel(usedLabels(doc)),
     color: DEFAULT_COLOR.point,
     visible: true,
-    def: { kind: 'onSegment', a, b, t },
+    def: line ? { kind: 'onSegment', a, b, t, line } : { kind: 'onSegment', a, b, t },
   }
 }
 

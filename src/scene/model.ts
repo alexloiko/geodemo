@@ -7,8 +7,8 @@ export const vertexRef = (i: number): PointRef => `v${i}`
 export const parseVertexRef = (r: PointRef): number | null => (/^v\d+$/.test(r) ? Number(r.slice(1)) : null)
 
 export type PointDef =
-  /** Point on segment a–b at parameter t (0 = a, 1 = b). Covers edges and user segments. */
-  | { kind: 'onSegment'; a: PointRef; b: PointRef; t: number }
+  /** Point on segment a–b at parameter t (0 = a, 1 = b); `line` allows t outside [0, 1]. */
+  | { kind: 'onSegment'; a: PointRef; b: PointRef; t: number; line?: boolean }
   /** Intersection of line (a1, a2) with line (b1, b2). */
   | { kind: 'intersection'; a1: PointRef; a2: PointRef; b1: PointRef; b2: PointRef }
   /** Intersection of solid edge a–b with a plane item (created with sections). */

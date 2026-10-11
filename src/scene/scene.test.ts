@@ -24,6 +24,12 @@ describe('example construction', () => {
     expect(dist(p('P'), p('L')) + dist(p('L'), p('C'))).toBeCloseTo(dist(p('P'), p('C')), 9)
   })
 
+  it('every section vertex maps to a point ref, so section sides accept points', () => {
+    const plane = [...ev.planes.values()][0]
+    const names = plane.refs.map((r) => (r ? ev.labels.get(r) : null)).sort()
+    expect(names).toEqual(['A', 'C', 'K', 'L'])
+  })
+
   it('removing K removes everything built on it', () => {
     const k = byLabel('K')
     const left = removeWithDependents(doc.items, [k])

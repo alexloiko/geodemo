@@ -16,8 +16,9 @@ const GRID = 28
 const SELECT_HALO = '#ffd54a'
 const PENDING = '#f08c00'
 
-/** Snap t to simple fractions (1/2, 1/3, 2/5 …) when close enough. */
-function snapT(t: number): number {
+/** Snap t to simple fractions (1/2, 1/3, 2/5 …) when close enough; clamp to [0, 1] unless on a line. */
+function snapT(t: number, line = false): number {
+  if (line && (t < 0 || t > 1)) return t
   let best = t
   let bestD = 0.02
   for (let den = 2; den <= 6; den++)
@@ -45,10 +46,10 @@ export function SvgCanvas() {
   const wrap = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const [size, setSize] = useState({ w: 800, h: 600 })
-  const [hover, setHover] = useState<{ a: PointRef; b: PointRef; t: number } | null>(null)
+  const [hover, setHover] = useState<{ a: PointRef; b: PointRef; t: number; line: boolean } | null>(null)
   const drag = useRef<
     | { kind: 'rotate'; x: number; y: number; moved: boolean }
-    | { kind: 'point'; id: string; a: PointRef; b: PointRef; moved: boolean }
+    | { kind: 'point'; id: string; a: PointRef; b: PointRef; line: boolean; moved: boolean }
     | null
   >(null)
 
@@ -124,7 +125,7 @@ export function SvgCanvas() {
       if (!pa || !pb) return
       if (!d.moved) st.checkpoint()
       d.moved = true
-      const t = snapT(tOnScreen(local(e), S(pa), S(pb)))
+      const t = snapT(tOnScreen(local(e), S(pa), S(pb)), d.line)
       const it = doc.items.find((i) => i.id === d.id) as PointItem
       st.updateItem(d.id, { def: { ...it.def, t } } as Partial<Item>, true)
     }
@@ -144,7 +145,7 @@ export function SvgCanvas() {
       st.select(ref, e.shiftKey || e.metaKey || e.ctrlKey)
       const it = doc.items.find((i) => i.id === ref)
       if (it?.type === 'point' && it.def.kind === 'onSegment') {
-        drag.current = { kind: 'point', id: it.id, a: it.def.a, b: it.def.b, moved: false }
+        drag.current = { kind: 'point', id: it.id, a: it.def.a, b: it.def.b, line: !!it.def.line, moved: false }
         ;(e.target as Element).setPointerCapture?.(e.pointerId)
       }
     } else if (tool !== 'point') st.pick(ref)
@@ -154,24 +155,28 @@ export function SvgCanvas() {
     e.stopPropagation()
     st.select(id, e.shiftKey || e.metaKey || e.ctrlKey)
   }
-  const segHover = (a: PointRef, b: PointRef) => ({
-    onPointerMove: (e: React.PointerEvent) => {
-      if (tool !== 'point' || drag.current) return
+  /** Point-tool handlers for anything a point can sit on: edges, segments, section sides, lines. */
+  const segHover = (a: PointRef, b: PointRef, line = false) => {
+    const tAt = (e: React.PointerEvent) => {
       const pa = ev.points.get(a)!
       const pb = ev.points.get(b)!
-      setHover({ a, b, t: snapT(tOnScreen(local(e), S(pa), S(pb))) })
-    },
-    onPointerLeave: () => setHover(null),
-    onPointerDown: (e: React.PointerEvent) => {
-      if (tool !== 'point') return
-      e.stopPropagation()
-      const pa = ev.points.get(a)!
-      const pb = ev.points.get(b)!
-      const t = snapT(tOnScreen(local(e), S(pa), S(pb)))
-      if (t <= 0 || t >= 1) return
-      st.addItems([makePointOnSegment(doc, a, b, t)])
-    },
-  })
+      return snapT(tOnScreen(local(e), S(pa), S(pb)), line)
+    }
+    return {
+      onPointerMove: (e: React.PointerEvent) => {
+        if (tool !== 'point' || drag.current) return
+        setHover({ a, b, t: tAt(e), line })
+      },
+      onPointerLeave: () => setHover(null),
+      onPointerDown: (e: React.PointerEvent) => {
+        if (tool !== 'point') return
+        e.stopPropagation()
+        const t = tAt(e)
+        if (t === 0 || t === 1 || (!line && (t < 0 || t > 1))) return
+        st.addItems([makePointOnSegment(doc, a, b, t, undefined, line)])
+      },
+    }
+  }
 
   // ---- geometry → SVG ----------------------------------------------------
   const pieces = (a: Vec3, b: Vec3) => splitByVisibility(hs, pr.toViewer, a, b, R)
@@ -280,6 +285,21 @@ export function SvgCanvas() {
             const q = sec[(i + 1) % sec.length]
             if (sel) underlays.push(line(p, q, { stroke: SELECT_HALO, strokeWidth: 9, strokeLinecap: 'round' }, `${it.id}-u${i}`))
             strokes.push(...drawPieces(p, q, it.color, 2.4, `${it.id}-${i}`, op))
+            const ra = pl.refs[i]
+            const rb = pl.refs[(i + 1) % sec.length]
+            if (ra && rb)
+              hits.push(
+                line(
+                  p,
+                  q,
+                  {
+                    className: tool === 'select' || tool === 'point' ? 'hit-line' : 'hit-line off',
+                    onPointerDown: (e: React.PointerEvent) => (tool === 'point' ? undefined : clickItem(it.id, e)),
+                    ...(tool === 'point' ? segHover(ra, rb) : {}),
+                  },
+                  `h${it.id}-${i}`,
+                ),
+              )
           })
         }
         break
@@ -299,7 +319,7 @@ export function SvgCanvas() {
             {
               className: tool === 'select' || tool === 'point' ? 'hit-line' : 'hit-line off',
               onPointerDown: (e: React.PointerEvent) => (tool === 'point' ? undefined : clickItem(it.id, e)),
-              ...(tool === 'point' ? segHover(it.a, it.b) : {}),
+              ...(tool === 'point' ? segHover(it.a, it.b, it.type === 'line') : {}),
             },
             `h${it.id}`,
           ),
@@ -366,7 +386,7 @@ export function SvgCanvas() {
   if (hover && tool === 'point') {
     const pa = ev.points.get(hover.a)
     const pb = ev.points.get(hover.b)
-    if (pa && pb && hover.t > 0 && hover.t < 1) {
+    if (pa && pb && hover.t !== 0 && hover.t !== 1 && (hover.line || (hover.t > 0 && hover.t < 1))) {
       const [x, y] = S(add(pa, scale(sub(pb, pa), hover.t)))
       preview = (
         <g pointerEvents="none">

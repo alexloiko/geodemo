@@ -2,12 +2,14 @@ import { type Plane, intersectLines, planeFrom3, signedDist } from '../geometry/
 import { type Polyhedron, edgesOf } from '../geometry/polyhedron'
 import { type SectionVertex, enclosingBox, section } from '../geometry/section'
 import { buildSolid } from '../geometry/solids'
-import { type Vec3, lerp } from '../geometry/vec'
+import { type Vec3, dist, lerp } from '../geometry/vec'
 import type { Doc, Item, PointRef } from './model'
 
 export interface EvalPlane {
   plane: Plane
   section: SectionVertex[]
+  /** Point ref at each section vertex (solid vertex or point item), when one exists. */
+  refs: (PointRef | null)[]
   extension: Vec3[]
 }
 
@@ -50,12 +52,20 @@ export function evaluate(doc: Doc): Evaluated {
       planes.set(it.id, {
         plane: pl,
         section: section(solid, pl),
+        refs: [],
         extension: section(box, pl).map((v) => v.pos),
       })
     } else if (needsPoints(it) && !refsOf(it).every((r) => points.has(r))) {
       invalid.add(it.id)
     }
   }
+  // Section vertices get their refs once all points (incl. later edgePlane points) exist.
+  const tol = 1e-6 * Math.max(...solid.vertices.map((v) => Math.hypot(...v.pos)), 1)
+  for (const pl of planes.values())
+    pl.refs = pl.section.map((v) => {
+      for (const [ref, p] of points) if (dist(p, v.pos) < tol) return ref
+      return null
+    })
   return { solid, points, labels, planes, invalid }
 }
 

@@ -206,7 +206,8 @@ function describe(it: Item, name: (r: PointRef) => string, t: ReturnType<typeof 
       const d = it.def
       if (d.kind === 'onSegment') {
         const m = Math.round(d.t * 1000) / 1000
-        return `∈ ${name(d.a)}${name(d.b)} · ${ratioOf(m)}`
+        const inside = m > 0 && m < 1
+        return `∈ ${name(d.a)}${name(d.b)}${inside ? ` · ${ratioOf(m)}` : ''}`
       }
       if (d.kind === 'intersection') return t('desc.intersection', { a: name(d.a1) + name(d.a2), b: name(d.b1) + name(d.b2) })
       return t('desc.edgePlane', { e: solidLabel(d.a) + solidLabel(d.b) })

@@ -30,7 +30,7 @@ export const en = {
   'tool.line': 'Line',
   'tool.plane': 'Plane',
   'hint.select': 'Drag to rotate · wheel to zoom · click elements to select (Shift for many) · drag points along edges.',
-  'hint.point': 'Click an edge or segment to put a point on it.',
+  'hint.point': 'Click an edge, a segment, a side of a section or a line to put a point on it.',
   'hint.segment': 'Click two points.',
   'hint.line': 'Click two points — the line is drawn extended.',
   'hint.plane': 'Click three points — the section is built automatically.',

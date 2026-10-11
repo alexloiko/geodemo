@@ -1,4 +1,5 @@
-import type { halfSpaces } from './polyhedron'
+import { type Polyhedron, boundingRadius, halfSpaces } from './polyhedron'
+import { isHiddenRev } from './revolution'
 import { type Vec3, dot, lerp } from './vec'
 
 export type HalfSpaces = ReturnType<typeof halfSpaces>
@@ -34,18 +35,13 @@ export interface Piece {
 }
 
 /**
- * Split segment a–b into visible / hidden pieces. The occluded set of a convex
- * solid under parallel projection is convex, so the hidden part is one interval.
+ * Split segment a–b into visible / hidden pieces using an occluder predicate.
+ * The occluded set of a convex body under parallel projection is convex, so the
+ * hidden part is one interval.
  */
-export function splitByVisibility(
-  hs: HalfSpaces,
-  toViewer: Vec3,
-  a: Vec3,
-  b: Vec3,
-  scaleRef: number,
-): Piece[] {
+export function splitByVisibility(hidden: (q: Vec3) => boolean, a: Vec3, b: Vec3): Piece[] {
   const N = 48
-  const hid = (t: number) => isHidden(hs, toViewer, lerp(a, b, t), scaleRef)
+  const hid = (t: number) => hidden(lerp(a, b, t))
   let first = -1
   let last = -1
   for (let i = 0; i <= N; i++) {
@@ -55,7 +51,6 @@ export function splitByVisibility(
       last = i
     }
   }
-  // Also check endpoints exactly.
   const ha = hid(0)
   const hb = hid(1)
   if (first < 0 && !ha && !hb) return [{ a, b, hidden: false }]
@@ -90,4 +85,16 @@ function refine(hid: (t: number) => boolean, inT: number, outT: number): number 
     else hi = m
   }
   return (lo + hi) / 2
+}
+
+/** Occluder for any solid: exact for bodies of revolution, half-spaces for polyhedra. */
+export function makeOccluder(solid: Polyhedron | null, toViewer: Vec3): (q: Vec3) => boolean {
+  if (!solid) return () => false
+  const R = Math.max(boundingRadius(solid), 1)
+  if (solid.rev) {
+    const rev = solid.rev
+    return (q) => isHiddenRev(rev, q, toViewer, R)
+  }
+  const hs = halfSpaces(solid)
+  return (q) => isHidden(hs, toViewer, q, R)
 }

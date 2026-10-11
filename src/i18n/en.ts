@@ -168,6 +168,20 @@ export const en = {
   "desc.equalAngles": "equal angles at {p}",
   "desc.ray": "ray {s}",
   "showDegrees": "Show degrees",
+  "kind.cylinder": "Cylinder",
+  "kind.cone": "Cone",
+  "kind.truncatedCone": "Truncated cone",
+  "kind.sphere": "Sphere",
+  "param.r": "Radius r",
+  "param.r1": "Bottom radius",
+  "param.r2": "Top radius",
+  "param.h": "Height h",
+  "figureGroup.flat": "Plane",
+  "figureGroup.poly": "Polyhedra",
+  "figureGroup.round": "Bodies of revolution",
+  "desc.onSurface": "on the surface",
+  "desc.circlePlane": "on {c}",
+  "rim": "base",
 }
 
 export type Dict = typeof en

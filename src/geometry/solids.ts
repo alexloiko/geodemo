@@ -1,4 +1,5 @@
 import { type Polyhedron, type Vertex, orientOutward } from './polyhedron'
+import { approximate } from './revolution'
 import type { Vec3 } from './vec'
 
 export type SolidSpec =
@@ -10,6 +11,10 @@ export type SolidSpec =
   | { kind: 'frustum'; n: number; side: number; top: number; height: number }
   | { kind: 'tetrahedron'; a: number }
   | { kind: 'octahedron'; a: number }
+  | { kind: 'cylinder'; r: number; h: number }
+  | { kind: 'cone'; r: number; h: number }
+  | { kind: 'truncatedCone'; r1: number; r2: number; h: number }
+  | { kind: 'sphere'; r: number }
 
 export type SolidKind = SolidSpec['kind']
 
@@ -22,7 +27,14 @@ export const SOLID_KINDS: SolidKind[] = [
   'frustum',
   'tetrahedron',
   'octahedron',
+  'cylinder',
+  'cone',
+  'truncatedCone',
+  'sphere',
 ]
+
+/** Bodies of revolution (curved surfaces). */
+export const isRevolution = (k: SolidKind) => k === 'cylinder' || k === 'cone' || k === 'truncatedCone' || k === 'sphere'
 
 export function defaultSpec(kind: SolidKind): SolidSpec {
   switch (kind) {
@@ -42,6 +54,14 @@ export function defaultSpec(kind: SolidKind): SolidSpec {
       return { kind, a: 5 }
     case 'octahedron':
       return { kind, a: 4 }
+    case 'cylinder':
+      return { kind, r: 2.5, h: 4.5 }
+    case 'cone':
+      return { kind, r: 2.5, h: 5 }
+    case 'truncatedCone':
+      return { kind, r1: 3, r2: 1.6, h: 3.5 }
+    case 'sphere':
+      return { kind, r: 3 }
   }
 }
 
@@ -115,6 +135,14 @@ function center(p: Polyhedron): Polyhedron {
 
 export function buildSolid(s: SolidSpec): Polyhedron {
   switch (s.kind) {
+    case 'cylinder':
+      return approximate({ kind: 'cylinder', r1: s.r, r2: s.r, h: s.h })
+    case 'cone':
+      return approximate({ kind: 'cone', r1: s.r, r2: 0, h: s.h })
+    case 'truncatedCone':
+      return approximate({ kind: 'frustum', r1: s.r1, r2: s.r2, h: s.h })
+    case 'sphere':
+      return approximate({ kind: 'sphere', r1: s.r, r2: s.r, h: 2 * s.r })
     case 'cube':
       return prismOver(rectangle(s.a, s.a), s.a)
     case 'cuboid':

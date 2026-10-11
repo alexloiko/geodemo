@@ -12,7 +12,8 @@ const idx = (labels: string[], l: string) => labels.indexOf(l)
 describe('solids', () => {
   it.each(SOLID_KINDS)('%s satisfies Euler V - E + F = 2', (kind) => {
     const p = buildSolid(defaultSpec(kind))
-    expect(p.vertices.length - edgesOf(p).length + p.faces.length).toBe(2)
+    const used = new Set(p.faces.flat()).size
+    expect(used - edgesOf(p).length + p.faces.length).toBe(2)
     // every edge has two faces
     expect(edgesOf(p).every((e) => e.faces[1] >= 0)).toBe(true)
   })
@@ -84,7 +85,7 @@ describe('textbook example: triangular prism, A_1K : KB_1 = 3 : 1, plane (A, C, 
     const pr = makeProjector(TEXTBOOK_CAMERA)
     const hs = halfSpaces(prism)
     // segment from far left-back to far right-back behind the prism
-    const pieces = splitByVisibility(hs, pr.toViewer, [-20, 10, -3.5], [20, 10, -3.5], 5)
+    const pieces = splitByVisibility((q) => isHidden(hs, pr.toViewer, q, 5), [-20, 10, -3.5], [20, 10, -3.5])
     expect(pieces.map((p) => p.hidden)).toEqual([false, true, false])
   })
 })

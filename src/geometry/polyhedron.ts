@@ -1,3 +1,4 @@
+import type { Revolution } from './revolution'
 import { type Vec3, centroid, dot, normalize, sub } from './vec'
 
 export interface Vertex {
@@ -10,7 +11,14 @@ export interface Vertex {
 export interface Polyhedron {
   vertices: Vertex[]
   faces: number[][]
+  /** Faces that approximate a curved surface (not real faces of the body). */
+  smooth?: boolean[]
+  /** Set for bodies of revolution: the exact description behind the approximation. */
+  rev?: Revolution
 }
+
+/** Faces that are real flat faces (all faces of a polyhedron, bases of a cylinder …). */
+export const flatFaces = (p: Polyhedron): number[] => p.faces.map((_, i) => i).filter((i) => !p.smooth?.[i])
 
 export interface Edge {
   a: number

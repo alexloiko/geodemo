@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { type Circle3, angleOnCircle, pointOnCircle, sampleCircle } from '../geometry/circle'
 import { type Line3, angleDeg, pointAt } from '../geometry/lines'
 import type { Plane } from '../geometry/plane'
-import { boundingRadius, edgesOf, faceNormal, halfSpaces, solidCenter } from '../geometry/polyhedron'
+import { boundingRadius, edgesOf, faceNormal, solidCenter } from '../geometry/polyhedron'
 import { type Vec3, add, cross, dot, len, lerp, normalize, scale, sub } from '../geometry/vec'
-import { isHidden, splitByVisibility } from '../geometry/visibility'
+import { contourGeneratrices, frontHit, sphereOutline, surfaceParams } from '../geometry/revolution'
+import { makeOccluder, splitByVisibility } from '../geometry/visibility'
 import { type EvLine, evaluate, resolveLine, resolvePlane } from '../scene/evaluate'
 import { type Item, type LineRef, type PointItem, type PointRef, depsOf, pairRef, parseVertexRef } from '../scene/model'
 import { nextSlot, toolById } from '../scene/tools'
@@ -18,7 +19,7 @@ type Look = 'normal' | 'dim' | 'hidden'
 const GRID = 28
 const SELECT_HALO = '#ffd54a'
 const PENDING = '#f08c00'
-const DRAGGABLE = ['onSegment', 'onLine', 'onCircle', 'free']
+const DRAGGABLE = ['onSegment', 'onLine', 'onCircle', 'free', 'onSurface']
 
 /** Snap t to simple fractions (1/2, 1/3, 2/5 …) when close enough; clamp to [0, 1] when bounded. */
 function snapT(t: number, bounded: boolean): number {
@@ -70,7 +71,7 @@ export function SvgCanvas() {
   const sheet = !solid
   const pr = useMemo(() => (sheet ? SHEET_PROJECTOR : makeProjector(camera)), [sheet, camera])
   const R = useMemo(() => (solid ? boundingRadius(solid) : 10), [solid])
-  const hs = useMemo(() => (solid ? halfSpaces(solid) : []), [solid])
+  const hidden = useMemo(() => makeOccluder(solid, pr.toViewer), [solid, pr])
   const center3: Vec3 = useMemo(() => (solid ? solidCenter(solid) : [0, 0, 0]), [solid])
 
   // ---- world ↔ screen ----------------------------------------------------
@@ -114,15 +115,16 @@ export function SvgCanvas() {
   }
 
   // ---- visibility --------------------------------------------------------
-  const pieces = (a: Vec3, b: Vec3) => (solid ? splitByVisibility(hs, pr.toViewer, a, b, R) : [{ a, b, hidden: false }])
-  const hiddenPt = (p: Vec3) => (solid ? isHidden(hs, pr.toViewer, p, R) : false)
+  const pieces = (a: Vec3, b: Vec3) => (solid ? splitByVisibility(hidden, a, b) : [{ a, b, hidden: false }])
+  const hiddenPt = hidden
 
   // ---- display filtering -------------------------------------------------
   const relevant = useMemo(() => {
     const set = new Set(selection)
     for (const it of doc.items) if (set.has(it.id)) for (const d of depsOf(it)) set.add(d)
     for (const it of doc.items)
-      if (it.type === 'point' && it.def.kind === 'edgePlane' && selection.includes(it.def.plane)) set.add(it.id)
+      if (it.type === 'point' && (it.def.kind === 'edgePlane' || it.def.kind === 'circlePlane') && selection.includes(it.def.plane))
+        set.add(it.id)
     return set
   }, [selection, doc.items])
   const filtering = mode !== 'all' && selection.length > 0
@@ -215,6 +217,10 @@ export function SvgCanvas() {
         const c = ev.circles.get(d.circle)
         return c ? { ...d, angle: angleAt(c, m) } : null
       }
+      case 'onSurface': {
+        const hit = surfaceHit(m)
+        return hit?.part === 'curved' && solid?.rev ? { ...d, ...surfaceParams(solid.rev, hit.pos) } : null
+      }
       case 'free': {
         if (!d.plane || d.plane === 'sheet') return { ...d, pos: sheetPoint(m) }
         const pl = resolvePlane(ev, d.plane)
@@ -274,7 +280,23 @@ export function SvgCanvas() {
     )
   }
 
+  /** First point of a body of revolution under the mouse. */
+  const surfaceHit = (m: P2) => {
+    if (!solid?.rev) return null
+    const n = normalize(pr.toViewer)
+    const X = unproject(m, { n, d: dot(n, center3) })
+    return frontHit(solid.rev, X, n)
+  }
+
   const onFaceDown = (f: number, e: React.PointerEvent) => {
+    if (solid?.smooth?.[f]) {
+      // Curved surface: exact point on the body.
+      if (!wantsPoint) return
+      e.stopPropagation()
+      const hit = surfaceHit(local(e))
+      if (hit?.part === 'curved' && solid.rev) st.hit({ kind: 'surface', ...surfaceParams(solid.rev, hit.pos) })
+      return
+    }
     const pl = resolvePlane(ev, `f${f}`)
     if (!pl) return
     e.stopPropagation()
@@ -375,7 +397,45 @@ export function SvgCanvas() {
     underlays.push(svgLine(a, b, { stroke: color, strokeWidth: 9, strokeLinecap: 'round', opacity: 0.75 }, key))
 
   // Solid edges and faces.
-  if (solid) {
+  if (solid?.rev) {
+    const rev = solid.rev
+    // Rims (base circles / equator): dashed where hidden, clickable like circles.
+    ev.circles.forEach((c, ref) => {
+      if (!ref.startsWith('rim')) return
+      const pts = sampleCircle(c, 160)
+      if (pickedRefs.has(ref))
+        underlays.push(<polygon key={`pk${ref}`} points={poly(pts)} fill="none" stroke={PENDING} strokeWidth={8} opacity={0.6} />)
+      strokes.push(...drawCurve(pts, '#111', 2, ref, figureOp))
+      if (wantsPoint || wantsCircle)
+        hits.push(
+          <polygon
+            key={`h${ref}`}
+            points={poly(pts)}
+            className="hit-curve"
+            onPointerMove={(e) => wantsPoint && !drag.current && setHover(pointOnCircle(c, angleAt(c, local(e))))}
+            onPointerLeave={() => setHover(null)}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              st.hit({ kind: 'circle', ref, angle: angleAt(c, local(e)) })
+            }}
+          />,
+        )
+    })
+    if (rev.kind === 'sphere') {
+      const out = sampleCircle(sphereOutline(rev, pr.toViewer), 160)
+      strokes.push(<polygon key="outline" points={poly(out)} fill="none" stroke="#111" strokeWidth={2} opacity={figureOp} />)
+    } else
+      contourGeneratrices(rev, pr.toViewer).forEach(([a, b], i) =>
+        strokes.push(svgLine(a, b, { stroke: '#111', strokeWidth: 2, strokeLinecap: 'round', opacity: figureOp }, `gen${i}`)),
+      )
+    if (wantsPoint || slot === 'face')
+      solid.faces.forEach((f, i) => {
+        if (!faceVisible[i] || (slot === 'face' && solid.smooth?.[i])) return
+        faceHits.push(
+          <polygon key={`fh${i}`} points={poly(f.map((v) => solid.vertices[v].pos))} className="hit-face" onPointerDown={(e) => onFaceDown(i, e)} />,
+        )
+      })
+  } else if (solid) {
     for (const e of edgesOf(solid)) {
       const hidden = !faceVisible[e.faces[0]] && !faceVisible[e.faces[1]]
       const [a, b] = [solid.vertices[e.a].pos, solid.vertices[e.b].pos]
@@ -436,13 +496,21 @@ export function SvgCanvas() {
         if (!pl) break
         if (it.extend && pl.extension.length >= 3)
           fills.push(<polygon key={`${it.id}-x`} points={poly(pl.extension)} fill={it.color} fillOpacity={0.14 * op} />)
+        if (pl.circle) {
+          const pts = sampleCircle(pl.circle, 160)
+          fills.push(<polygon key={it.id} points={poly(pts)} fill={it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
+          if (sel) underlays.push(<polygon key={`${it.id}-u`} points={poly(pts)} fill="none" stroke={SELECT_HALO} strokeWidth={8} opacity={0.6} />)
+          strokes.push(...drawCurve(pts, it.color, 2.4, it.id, op))
+          break
+        }
         const sec = pl.section.map((v) => v.pos)
         if (sec.length < 3) break
         fills.push(<polygon key={it.id} points={poly(sec)} fill={it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
+        if (solid?.rev) strokes.push(...drawCurve(sec, it.color, 2.4, `${it.id}-c`, op))
         sec.forEach((p, i) => {
           const q = sec[(i + 1) % sec.length]
           if (sel) halo(p, q, `${it.id}-u${i}`)
-          strokes.push(...drawPieces(p, q, it.color, 2.4, `${it.id}-${i}`, op))
+          if (!solid?.rev) strokes.push(...drawPieces(p, q, it.color, 2.4, `${it.id}-${i}`, op))
           const [ra, rb] = [pl.refs[i], pl.refs[(i + 1) % sec.length]]
           if (ra && rb) hits.push(lineHit(p, q, pairRef(ra, rb), true, it.id, `h${it.id}-${i}`))
         })

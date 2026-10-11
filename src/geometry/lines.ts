@@ -71,3 +71,13 @@ export function angleDeg(a: Vec3, o: Vec3, b: Vec3): number {
   const ub = normalize(sub(b, o))
   return (Math.acos(Math.max(-1, Math.min(1, dot(ua, ub)))) * 180) / Math.PI
 }
+
+/** Line where two planes meet, or null when they are parallel. */
+export function planePlane(p1: Plane, p2: Plane): Line3 | null {
+  const dir = cross(p1.n, p2.n)
+  const det = dot(dir, dir)
+  if (det < 1e-18) return null
+  // Point = ((d1 n2 − d2 n1) × dir) / |dir|²  … expressed via the standard formula.
+  const p = scale(add(scale(cross(p2.n, dir), p1.d), scale(cross(dir, p1.n), p2.d)), 1 / det)
+  return { p, d: normalize(dir) }
+}

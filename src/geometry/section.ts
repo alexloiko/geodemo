@@ -15,8 +15,9 @@ export function section(p: Polyhedron, pl: Plane): SectionVertex[] {
   const tol = 1e-7 * Math.max(boundingRadius(p), 1)
   const d = p.vertices.map((v) => signedDist(pl, v.pos))
   const out: SectionVertex[] = []
+  const onFaces = new Set(p.faces.flat())
   d.forEach((di, i) => {
-    if (Math.abs(di) <= tol) out.push({ pos: p.vertices[i].pos, vertex: i })
+    if (onFaces.has(i) && Math.abs(di) <= tol) out.push({ pos: p.vertices[i].pos, vertex: i })
   })
   for (const e of edgesOf(p)) {
     const da = d[e.a]

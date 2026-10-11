@@ -3,12 +3,13 @@ const POOL_2D = 'ABCDEFGHKLMNOPQRSTUVWXYZ'
 
 /**
  * Next free label: the preferred letter if free, otherwise the next single letter
- * from the pool (K, L, M … on solids; A, B, C … on the sheet), then K_2, L_2, …
+ * from the pool (K, L, M … on polyhedra whose vertices use A…H; A, B, C … on the
+ * sheet and on bodies of revolution), then K_2, L_2, …
  */
-export function nextLabel(used: Iterable<string>, opts: { prefer?: string; sheet?: boolean } = {}): string {
+export function nextLabel(used: Iterable<string>, opts: { prefer?: string; fromA?: boolean } = {}): string {
   const set = new Set(used)
   if (opts.prefer && !set.has(opts.prefer)) return opts.prefer
-  const pool = opts.sheet ? POOL_2D : POOL_3D
+  const pool = opts.fromA ? POOL_2D : POOL_3D
   for (let k = 1; k < 100; k++) {
     for (const ch of pool) {
       const name = k === 1 ? ch : `${ch}_${k}`
@@ -41,3 +42,7 @@ export const prettyLabel = (label: string): string => {
   const { base, sub } = splitLabel(label)
   return base + [...sub].map((c) => SUBS[c] ?? c).join('')
 }
+
+/** Documents whose new points are named from A (the sheet, bodies of revolution). */
+export const labelsFromA = (solid: { kind: string } | null): boolean =>
+  !solid || ['cylinder', 'cone', 'truncatedCone', 'sphere'].includes(solid.kind)

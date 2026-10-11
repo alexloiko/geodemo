@@ -1,5 +1,6 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
 import { detectLang, type Lang } from '../i18n'
+import { defaultCamera } from '../render/camera'
 import type { Doc, Item } from '../scene/model'
 import { useStore } from '../store/store'
 
@@ -60,7 +61,7 @@ export function initPersistence() {
   const saved = fromHash ?? local
   useStore.setState({
     lang: local?.lang ?? detectLang(),
-    ...(saved ? { doc: saved.doc } : {}),
+    ...(saved ? { doc: saved.doc, camera: defaultCamera(saved.doc.solid?.kind ?? null) } : {}),
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   useStore.subscribe((s, prev) => {

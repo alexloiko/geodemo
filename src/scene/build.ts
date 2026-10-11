@@ -1,7 +1,9 @@
+import { circlePlanePoints } from '../geometry/circle'
 import { planeFrom3 } from '../geometry/plane'
-import { dist } from '../geometry/vec'
+import { rims } from '../geometry/revolution'
+import { type Vec3, dist } from '../geometry/vec'
 import { evaluate } from './evaluate'
-import { nextLabel, nextVariable } from './labels'
+import { labelsFromA, nextLabel, nextVariable } from './labels'
 import {
   DEFAULT_COLOR,
   type Doc,
@@ -11,6 +13,7 @@ import {
   type PointRef,
   type RatioItem,
   newId,
+  rimRef,
 } from './model'
 
 /** Labels in use by vertices and point items. */
@@ -29,7 +32,7 @@ export function makePointOnSegment(
   return {
     id: newId('p'),
     type: 'point',
-    label: label || nextLabel(usedLabels(doc), { sheet: !doc.solid }),
+    label: label || nextLabel(usedLabels(doc), { fromA: labelsFromA(doc.solid) }),
     color: DEFAULT_COLOR.point,
     visible: true,
     def: line ? { kind: 'onSegment', a, b, t, line } : { kind: 'onSegment', a, b, t },
@@ -47,7 +50,7 @@ export function makeIntersection(
   return {
     id: newId('p'),
     type: 'point',
-    label: label || nextLabel(usedLabels(doc)),
+    label: label || nextLabel(usedLabels(doc), { fromA: labelsFromA(doc.solid) }),
     color: DEFAULT_COLOR.point,
     visible: true,
     def: { kind: 'intersection', a1, a2, b1, b2 },
@@ -78,6 +81,37 @@ export function makePlane(doc: Doc, a: PointRef, b: PointRef, c: PointRef, exten
   const existing = [...ev.points.values()]
   const out: Item[] = [plane]
   const labels = usedLabels(doc)
+  const rev = ev.solid?.rev
+  if (rev) {
+    // Curved bodies: exact points where the plane cuts the base circles.
+    const pl = evaluate(withPlane).planes.get(plane.id)!.plane
+    // Named points, to call a point above a bottom point A (same angle) A₁.
+    const named: { label: string; pos: Vec3 }[] = []
+    for (const [ref, p] of ev.points) if (!ref.startsWith('v')) named.push({ label: ev.labels.get(ref) ?? '', pos: p })
+    rims(rev).forEach((r, ri) => {
+      if (!r.base) return
+      circlePlanePoints(r.circle, pl, ev.tol).forEach((p, index) => {
+        if (existing.some((q) => dist(q, p) < tol)) return
+        // A point straight above a named bottom point A gets the textbook name A₁.
+        const angle = (q: Vec3) => Math.atan2(q[1], q[0])
+        const sameAngle = (q: Vec3) => Math.abs(Math.sin((angle(q) - angle(p)) / 2)) < 1e-6 && Math.hypot(q[0], q[1]) > tol
+        const below = ri > 0 ? named.find((n) => n.pos[2] < p[2] && sameAngle(n.pos)) : undefined
+        const label = nextLabel(labels, { fromA: true, prefer: below ? `${below.label}_1` : undefined })
+        named.push({ label, pos: p })
+        labels.push(label)
+        existing.push(p)
+        out.push({
+          id: newId('p'),
+          type: 'point',
+          label,
+          color: DEFAULT_COLOR.point,
+          visible: true,
+          def: { kind: 'circlePlane', circle: rimRef(ri), plane: plane.id, index },
+        })
+      })
+    })
+    return out
+  }
   for (const v of sec) {
     if (!v.edge) continue
     if (existing.some((p) => dist(p, v.pos) < tol)) continue

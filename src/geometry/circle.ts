@@ -1,5 +1,5 @@
 import type { Line3 } from './lines'
-import { distToLine, foot, linePlane, paramOf, pointAt } from './lines'
+import { distToLine, foot, linePlane, paramOf, planePlane, pointAt } from './lines'
 import type { Plane } from './plane'
 import { type Vec3, add, cross, dist, dot, len, normalize, scale, sub } from './vec'
 
@@ -116,4 +116,17 @@ export function tangencyPoints(c: Circle3, p: Vec3, tol: number): Vec3[] {
   const along = (c.r * c.r) / d
   const across = (c.r * Math.sqrt(d * d - c.r * c.r)) / d
   return [add(c.c, add(scale(w, along), scale(perp, across))), add(c.c, sub(scale(w, along), scale(perp, across)))]
+}
+
+/** Points where a plane cuts a circle (none when the plane contains or misses it). */
+export function circlePlanePoints(c: Circle3, pl: Plane, tol: number): Vec3[] {
+  const l = planePlane(circlePlane(c), pl)
+  return l ? lineCircle(l, c, tol) : []
+}
+
+/** Circle where a plane cuts a sphere, or null. */
+export function sphereSection(center: Vec3, r: number, pl: Plane): Circle3 | null {
+  const d = dot(pl.n, center) - pl.d
+  if (Math.abs(d) >= r) return null
+  return { c: sub(center, scale(pl.n, d)), n: pl.n, r: Math.sqrt(r * r - d * d) }
 }

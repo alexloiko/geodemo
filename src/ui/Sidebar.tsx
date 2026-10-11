@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { type SolidKind, type SolidSpec, SOLID_KINDS, defaultSpec } from '../geometry/solids'
+import { type SolidKind, type SolidSpec, SOLID_KINDS, defaultSpec, isRevolution } from '../geometry/solids'
 import { type DictKey, LANGS, useT } from '../i18n'
 import { shareUrl } from '../persist/persist'
+import { flatFaces } from '../geometry/polyhedron'
 import { evaluate } from '../scene/evaluate'
 import { loadExample } from '../scene/example'
 import { prettyLabel } from '../scene/labels'
@@ -14,6 +15,7 @@ import { ToolIcon } from './ToolIcon'
 
 const FORMS_3D: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
 const FORMS_2D: FormKind[] = ['segment', 'intersection', 'ratio']
+const FORMS_ROUND: FormKind[] = ['segment', 'intersection', 'plane', 'ratio']
 const TYPES: ItemType[] = ['point', 'segment', 'line', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio']
 const MODES: DisplayMode[] = ['all', 'focus', 'selected']
 
@@ -100,11 +102,17 @@ function FigurePanel() {
           change(v === 'sheet' ? null : defaultSpec(v))
         }}
       >
-        <option value="sheet">{t('kind.sheet')}</option>
-        {SOLID_KINDS.map((k) => (
-          <option key={k} value={k}>
-            {t(`kind.${k}` as DictKey)}
-          </option>
+        <optgroup label={t('figureGroup.flat')}>
+          <option value="sheet">{t('kind.sheet')}</option>
+        </optgroup>
+        {([false, true] as const).map((round) => (
+          <optgroup key={String(round)} label={t(round ? 'figureGroup.round' : 'figureGroup.poly')}>
+            {SOLID_KINDS.filter((k) => isRevolution(k) === round).map((k) => (
+              <option key={k} value={k}>
+                {t(`kind.${k}` as DictKey)}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       {confirm && (
@@ -123,6 +131,9 @@ function FigurePanel() {
           {(solid.kind === 'prism' || solid.kind === 'pyramid' || solid.kind === 'frustum') && [num('side', 'param.side', 1, 9), num('height', 'param.height', 1, 9)]}
           {(solid.kind === 'prism' || solid.kind === 'parallelepiped') && num('shift', 'param.shift', -4, 4)}
           {solid.kind === 'frustum' && num('top', 'param.top', 0.5, solid.side - 0.5)}
+          {(solid.kind === 'cylinder' || solid.kind === 'cone') && [num('r', 'param.r', 0.5, 6), num('h', 'param.h', 1, 9)]}
+          {solid.kind === 'truncatedCone' && [num('r1', 'param.r1', 0.5, 6), num('r2', 'param.r2', 0.2, 6), num('h', 'param.h', 1, 9)]}
+          {solid.kind === 'sphere' && num('r', 'param.r', 1, 6)}
           {solid.kind === 'pyramid' && (
             <label className="num-field">
               <span>{t('param.apex')}</span>
@@ -228,11 +239,12 @@ function ToolsPanel() {
           {t('opt.workingPlane')}
           <select value={opts.workingPlane} onChange={(e) => st.setOpts({ workingPlane: e.target.value })}>
             <option value="auto">{t('plane.auto')}</option>
-            {ev.solid?.faces.map((_, i) => (
-              <option key={i} value={`f${i}`}>
-                {names.plane(`f${i}`)}
-              </option>
-            ))}
+            {ev.solid &&
+              flatFaces(ev.solid).map((i) => (
+                <option key={i} value={`f${i}`}>
+                  {names.plane(`f${i}`)}
+                </option>
+              ))}
             {[...ev.planes.keys()].map((id) => (
               <option key={id} value={id}>
                 {names.plane(id)}
@@ -244,7 +256,7 @@ function ToolsPanel() {
 
       <div className="sub-title">{t('exact')}</div>
       <div className="form-buttons">
-        {(sheet ? FORMS_2D : FORMS_3D).map((f) => (
+        {(sheet ? FORMS_2D : doc.solid && isRevolution(doc.solid.kind) ? FORMS_ROUND : FORMS_3D).map((f) => (
           <button key={f} className={`chip ${form === f ? 'on' : ''}`} onClick={() => setForm(form === f ? null : f)}>
             {t(`form.${f}` as DictKey)}
           </button>

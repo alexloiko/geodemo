@@ -1,5 +1,5 @@
 import { useT } from '../i18n'
-import { ORTHO_CAMERA, TEXTBOOK_CAMERA } from '../render/camera'
+import { ORTHO_CAMERA, TEXTBOOK_CAMERA, defaultCamera } from '../render/camera'
 import { useStore } from '../store/store'
 
 export function ViewControls() {
@@ -7,6 +7,7 @@ export function ViewControls() {
   const camera = useStore((s) => s.camera)
   const setCamera = useStore((s) => s.setCamera)
   const sheet = useStore((s) => !s.doc.solid)
+  const solidKind = useStore((s) => s.doc.solid?.kind ?? null)
   if (sheet)
     return (
       <div className="view-controls">
@@ -25,13 +26,16 @@ export function ViewControls() {
         <button className={camera.projection === 'oblique' ? 'on' : ''} onClick={() => setCamera({ ...TEXTBOOK_CAMERA, zoom: camera.zoom })}>
           {t('proj.oblique')}
         </button>
-        <button className={camera.projection === 'orthographic' ? 'on' : ''} onClick={() => setCamera({ ...ORTHO_CAMERA, zoom: camera.zoom })}>
+        <button className={camera.projection === 'orthographic' ? 'on' : ''} onClick={() => setCamera({ ...(defaultCamera(solidKind).projection === 'orthographic' ? defaultCamera(solidKind) : ORTHO_CAMERA), zoom: camera.zoom })}>
           {t('proj.orthographic')}
         </button>
       </div>
       <button
         className="btn"
-        onClick={() => setCamera({ ...(camera.projection === 'oblique' ? TEXTBOOK_CAMERA : ORTHO_CAMERA), pan: [0, 0] })}
+        onClick={() => {
+          const def = defaultCamera(solidKind)
+          setCamera(camera.projection === def.projection ? def : camera.projection === 'oblique' ? TEXTBOOK_CAMERA : ORTHO_CAMERA)
+        }}
       >
         {t('resetView')}
       </button>

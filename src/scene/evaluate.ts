@@ -1,5 +1,7 @@
 import {
   type Circle3,
+  circlePlanePoints,
+  sphereSection,
   circleCenterPoint,
   circleCircle,
   circumcircle,
@@ -19,8 +21,9 @@ import {
   pointAt,
 } from '../geometry/lines'
 import { type Plane, intersectLines, planeFrom3, signedDist } from '../geometry/plane'
-import { type Polyhedron, boundingRadius, edgesOf, faceNormal } from '../geometry/polyhedron'
+import { type Polyhedron, boundingRadius, edgesOf, faceNormal, flatFaces } from '../geometry/polyhedron'
 import { type SectionVertex, enclosingBox, section } from '../geometry/section'
+import { rims, surfacePoint } from '../geometry/revolution'
 import { buildSolid } from '../geometry/solids'
 import { type Vec3, cross, dist, dot, len, lerp, normalize, sub } from '../geometry/vec'
 import {
@@ -34,6 +37,7 @@ import {
   SHEET,
   parseFaceRef,
   parsePairRef,
+  rimRef,
 } from './model'
 
 export interface EvalPlane {
@@ -42,6 +46,8 @@ export interface EvalPlane {
   /** Point ref at each section vertex (solid vertex or point item), when one exists. */
   refs: (PointRef | null)[]
   extension: Vec3[]
+  /** Exact section circle of a sphere. */
+  circle?: Circle3
 }
 
 /** An evaluated line-like object. For two-point lines p = A and d = B − A. */
@@ -85,9 +91,11 @@ export function evaluate(doc: Doc): Evaluated {
     tol: 1e-6 * scaleRef,
   }
   solid?.vertices.forEach((v, i) => {
+    if (solid.rev && !v.label) return // approximation vertices are not points
     ev.points.set(`v${i}`, v.pos)
     ev.labels.set(`v${i}`, v.label)
   })
+  if (solid?.rev) rims(solid.rev).forEach((r, i) => ev.circles.set(rimRef(i), r.circle))
   const box = solid ? enclosingBox(solid) : null
 
   for (const it of doc.items) {
@@ -126,11 +134,14 @@ export function evaluate(doc: Doc): Evaluated {
           ok = false
           break
         }
+        const rev = solid.rev
+        const circle = rev?.kind === 'sphere' ? sphereSection([0, 0, 0], rev.r1, pl) : null
         ev.planes.set(it.id, {
           plane: pl,
-          section: section(solid, pl),
+          section: rev?.kind === 'sphere' ? [] : section(solid, pl),
           refs: [],
           extension: section(box, pl).map((v) => v.pos),
+          ...(circle ? { circle } : {}),
         })
         break
       }
@@ -154,11 +165,16 @@ export function evaluate(doc: Doc): Evaluated {
   }
 
   // Section vertices get their refs once all points (incl. later edgePlane points) exist.
-  for (const pl of ev.planes.values())
+  // On curved bodies the approximate vertices snap to the exact rim points.
+  const snap = solid?.rev ? 5e-3 * scaleRef : ev.tol
+  for (const pl of ev.planes.values()) {
     pl.refs = pl.section.map((v) => {
-      for (const [ref, p] of ev.points) if (dist(p, v.pos) < ev.tol) return ref
+      for (const [ref, p] of ev.points) if (dist(p, v.pos) < snap) return ref
       return null
     })
+    if (solid?.rev)
+      pl.section = pl.section.map((v, i) => (pl.refs[i] ? { ...v, pos: ev.points.get(pl.refs[i]!)! } : v))
+  }
   return ev
 }
 
@@ -190,10 +206,10 @@ export function planesContaining(ev: Evaluated, pts: Vec3[]): PlaneRef[] {
   if (!ev.solid) return [SHEET]
   const out: PlaneRef[] = []
   const on = (pl: Plane) => pts.every((p) => Math.abs(signedDist(pl, p)) < ev.tol * 10)
-  ev.solid.faces.forEach((_, i) => {
+  for (const i of flatFaces(ev.solid)) {
     const pl = resolvePlane(ev, `f${i}`)
     if (pl && on(pl)) out.push(`f${i}`)
-  })
+  }
   for (const [id, pl] of ev.planes) if (on(pl.plane)) out.push(id)
   return out
 }
@@ -321,10 +337,16 @@ function evalPoint(it: PointItem, ev: Evaluated): Vec3 | null {
       const [c, q] = [ev.circles.get(d.circle), P(d.point)]
       return c && q ? (tangencyPoints(c, q, ev.tol)[d.index] ?? null) : null
     }
+    case 'onSurface':
+      return ev.solid?.rev ? surfacePoint(ev.solid.rev, d.u, d.w) : null
+    case 'circlePlane': {
+      const [c, pl] = [ev.circles.get(d.circle), ev.planes.get(d.plane)]
+      return c && pl ? (circlePlanePoints(c, pl.plane, ev.tol)[d.index] ?? null) : null
+    }
   }
 }
 
 /** Solid edges as vertex refs, for pickers and forms. */
 export function solidEdges(solid: Polyhedron | null): [PointRef, PointRef][] {
-  return solid ? edgesOf(solid).map((e) => [`v${e.a}`, `v${e.b}`]) : []
+  return solid && !solid.rev ? edgesOf(solid).map((e) => [`v${e.a}`, `v${e.b}`]) : []
 }

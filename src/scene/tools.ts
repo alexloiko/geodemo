@@ -5,7 +5,7 @@ import { type Vec3, dist } from '../geometry/vec'
 import type { DictKey } from '../i18n/en'
 import { makePlane } from './build'
 import { type Evaluated, meetPoints, planesContaining, resolveLine, resolvePlane } from './evaluate'
-import { nextLabel } from './labels'
+import { labelsFromA, nextLabel } from './labels'
 import {
   AUX_COLOR,
   DEFAULT_COLOR,
@@ -96,7 +96,7 @@ const refOf = (p: Pick): string => (p.kind === 'face' ? `f${p.face}` : p.ref)
 function pointFactory(ctx: BuildCtx) {
   const used = [...ctx.ev.labels.values()]
   return (def: PointDef, prefer?: string, color = DEFAULT_COLOR.point): PointItem => {
-    const label = nextLabel(used, { prefer, sheet: !ctx.doc.solid })
+    const label = nextLabel(used, { prefer, fromA: labelsFromA(ctx.doc.solid) })
     used.push(label)
     return { id: newId('p'), type: 'point', label, color, visible: true, def }
   }

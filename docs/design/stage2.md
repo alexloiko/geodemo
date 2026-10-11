@@ -10,7 +10,7 @@ Work is split into five phases; each phase ends with tests, a browser check and 
 
 ---
 
-## Phase 1 — bodies of revolution
+## Phase 1 — bodies of revolution (done)
 
 New solids: **cylinder** (r, h), **cone** (r, h), **truncated cone** (r₁, r₂, h), **sphere** (r).
 
@@ -25,7 +25,7 @@ A curved body keeps two descriptions:
 
 Named points become solid vertices with labels: cylinder / truncated cone `O`, `O₁` (base
 centres), cone `O` and apex `S`, sphere `O`. Rims (base circles, sphere equator) are circles the
-user can click: refs `r0`, `r1` in `ev.circles`, so all circle tools and "point on circle" work.
+user can click: refs `rim0`, `rim1` in `ev.circles`, so all circle tools and "point on circle" work.
 
 Only flat faces (bases) are offered as working planes and face highlights; lateral facets are
 marked `smooth`.
@@ -52,6 +52,12 @@ hidden part of a segment is still a single interval.
 Clicking the lateral surface casts the view ray against the analytic body (front intersection)
 and creates `PointDef { kind: 'onSurface', u, v }` (angle + height; sphere: longitude + latitude).
 Dragging re-casts the ray. Clicks on a base create a free point in that base plane (as for faces).
+
+Default view for bodies of revolution: orthographic, from the front and slightly above
+(horizontal base ellipses, round sphere), as in textbooks. The visibility test uses a tolerance of
+3·10⁻³ of the body size so that chord midpoints and approximation vertices (slightly inside the
+true surface) count as surface points. New points on these bodies are named from `A`; a section
+corner above a bottom point `A` (same angle) is named `A₁`.
 
 ### Sections
 

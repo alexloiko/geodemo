@@ -12,7 +12,9 @@ src/
     polyhedron.ts   convex polyhedron model, outward faces, edges, half-spaces
     solids.ts       SolidSpec → Polyhedron generators with textbook labels
     section.ts      convex polyhedron ∩ plane → ordered polygon; enclosing box
-    visibility.ts   hidden-point test and visible/hidden segment splitting
+    visibility.ts   occluder predicate (half-spaces / exact for curved bodies), segment splitting
+    revolution.ts   cylinder, cone, frustum, sphere: ray test, contour lines, surface points,
+                    polygonal approximation for sections
   scene/      construction document
     model.ts        Item types (point, segment, line, plane, face, ratio), dependencies
     evaluate.ts     Doc → computed 3D geometry (points, sections, invalid items)

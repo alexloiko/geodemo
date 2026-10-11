@@ -1,7 +1,7 @@
 import type { DictKey } from '../i18n/en'
 import type { Evaluated } from './evaluate'
 import { prettyLabel } from './labels'
-import { type Doc, type Item, type LineRef, type PlaneRef, SHEET, parseFaceRef, parsePairRef } from './model'
+import { type Doc, type Item, type LineRef, type PlaneRef, SHEET, parseFaceRef, parsePairRef, parseRimRef } from './model'
 
 type T = (key: DictKey, vars?: Record<string, string>) => string
 
@@ -39,9 +39,27 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
     if (it?.type === 'line' && it.def.kind === 'through') return pair(it.def.a, it.def.b)
     return lineNames.get(ref) ?? circleNames.get(ref) ?? '?'
   }
-  const circle = (ref: string) => circleNames.get(ref) ?? '?'
+  const circle = (ref: string) => {
+    if (parseRimRef(ref) !== null) {
+      // Rims are named after their centre: (O), (O₁).
+      const c = ev.circles.get(ref)
+      const centre = c && [...ev.points.entries()].find(([, p]) => Math.hypot(p[0] - c.c[0], p[1] - c.c[1], p[2] - c.c[2]) < ev.tol)
+      return centre ? `(${point(centre[0])})` : t('rim')
+    }
+    return circleNames.get(ref) ?? '?'
+  }
   const solidLabel = (i: number) => prettyLabel(ev.solid?.vertices[i]?.label ?? '?')
-  const face = (f: number) => (ev.solid?.faces[f] ?? []).map(solidLabel).join('')
+  const face = (f: number) => {
+    const s = ev.solid
+    if (s?.rev) {
+      // A base of a body of revolution is named after its centre.
+      const vs = (s.faces[f] ?? []).map((i) => s.vertices[i].pos)
+      const z = vs.reduce((acc, p) => acc + p[2], 0) / Math.max(vs.length, 1)
+      const centre = [...ev.points.entries()].find(([r, p]) => r.startsWith('v') && Math.abs(p[2] - z) < ev.tol && Math.hypot(p[0], p[1]) < ev.tol)
+      return `${t('rim')} ${centre ? point(centre[0]) : ''}`.trim()
+    }
+    return (s?.faces[f] ?? []).map(solidLabel).join('')
+  }
   const plane = (ref: PlaneRef): string => {
     if (ref === SHEET) return t('plane.sheet')
     const f = parseFaceRef(ref)
@@ -81,6 +99,10 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
             return t('desc.foot', { p: point(d.point), l: line(d.line) })
           case 'tangency':
             return t('desc.tangency', { p: point(d.point) })
+          case 'onSurface':
+            return t('desc.onSurface')
+          case 'circlePlane':
+            return t('desc.circlePlane', { c: circle(d.circle) })
         }
         break
       }

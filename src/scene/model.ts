@@ -21,6 +21,9 @@ export const parsePairRef = (r: LineRef): [PointRef, PointRef] | null => {
   return i < 0 ? null : [r.slice(0, i), r.slice(i + 1)]
 }
 export const SHEET: PlaneRef = 'sheet'
+/** Rims of bodies of revolution (base circles, sphere equator) are circles "rim0", "rim1". */
+export const rimRef = (i: number): CircleRef => `rim${i}`
+export const parseRimRef = (r: string): number | null => (/^rim\d+$/.test(r) ? Number(r.slice(3)) : null)
 export const faceRef = (f: number): PlaneRef => `f${f}`
 export const parseFaceRef = (r: PlaneRef): number | null => (/^f\d+$/.test(r) ? Number(r.slice(1)) : null)
 
@@ -43,6 +46,10 @@ export type PointDef =
   | { kind: 'foot'; point: PointRef; line: LineRef }
   /** Tangency point number `index` of tangents from `point` to `circle`. */
   | { kind: 'tangency'; circle: CircleRef; point: PointRef; index: number }
+  /** Point on the curved surface of a body of revolution (angle u, height fraction / latitude w). */
+  | { kind: 'onSurface'; u: number; w: number }
+  /** Point number `index` where a plane item cuts a circle (rims of bodies of revolution). */
+  | { kind: 'circlePlane'; circle: CircleRef; plane: string; index: number }
 
 export type LineDef =
   | { kind: 'through'; a: PointRef; b: PointRef }
@@ -212,6 +219,11 @@ export function refsOf(item: Item): string[] {
         case 'tangency':
           add(d.circle, d.point)
           break
+        case 'circlePlane':
+          add(d.circle, d.plane)
+          break
+        case 'onSurface':
+          break
       }
       break
     }
@@ -275,7 +287,9 @@ export function refsOf(item: Item): string[] {
 
 /** Item ids that `item` depends on (solid vertices, faces and the sheet excluded). */
 export function depsOf(item: Item): string[] {
-  return refsOf(item).filter((r) => parseVertexRef(r) === null && parseFaceRef(r) === null && r !== SHEET)
+  return refsOf(item).filter(
+    (r) => parseVertexRef(r) === null && parseFaceRef(r) === null && parseRimRef(r) === null && r !== SHEET,
+  )
 }
 
 /** Remove items and everything that (transitively) depends on them. */

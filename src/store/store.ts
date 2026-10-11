@@ -3,10 +3,10 @@ import { type SolidSpec, defaultSpec } from '../geometry/solids'
 import type { Vec3 } from '../geometry/vec'
 import type { Lang } from '../i18n'
 import type { DictKey } from '../i18n/en'
-import { type Camera, TEXTBOOK_CAMERA } from '../render/camera'
+import { type Camera, TEXTBOOK_CAMERA, defaultCamera } from '../render/camera'
 import { makePointOnSegment, usedLabels } from '../scene/build'
 import { type Evaluated, evaluate, resolveLine } from '../scene/evaluate'
-import { nextLabel } from '../scene/labels'
+import { labelsFromA, nextLabel } from '../scene/labels'
 import {
   DEFAULT_COLOR,
   type Doc,
@@ -40,6 +40,8 @@ export type CanvasHit =
   | { kind: 'line'; ref: LineRef; t: number; bounded: boolean }
   | { kind: 'circle'; ref: string; angle: number }
   | { kind: 'face'; face: number; pos: Vec3 }
+  /** Curved surface of a body of revolution. */
+  | { kind: 'surface'; u: number; w: number }
   /** Empty space; pos is set on the sheet. */
   | { kind: 'empty'; pos: Vec3 | null }
 
@@ -95,7 +97,7 @@ const HISTORY = 100
 
 /** Create the point a click on a line / circle / face / empty sheet stands for. */
 function materializePoint(doc: Doc, ev: Evaluated, h: CanvasHit): PointItem | null {
-  const label = () => nextLabel(usedLabels(doc), { sheet: !doc.solid })
+  const label = () => nextLabel(usedLabels(doc), { fromA: labelsFromA(doc.solid) })
   const point = (def: PointItem['def']): PointItem => ({
     id: newId('p'),
     type: 'point',
@@ -118,6 +120,8 @@ function materializePoint(doc: Doc, ev: Evaluated, h: CanvasHit): PointItem | nu
       return point({ kind: 'onCircle', circle: h.ref, angle: h.angle })
     case 'face':
       return point({ kind: 'free', pos: h.pos, plane: `f${h.face}` })
+    case 'surface':
+      return point({ kind: 'onSurface', u: h.u, w: h.w })
     case 'empty':
       return h.pos ? point({ kind: 'free', pos: h.pos, plane: 'sheet' }) : null
     case 'point':
@@ -183,10 +187,9 @@ export const useStore = create<State>((set, get) => {
       const { doc } = get()
       const sameKind =
         !!spec && !!doc.solid && doc.solid.kind === spec.kind && ('n' in doc.solid ? doc.solid.n : 0) === ('n' in spec ? spec.n : 0)
-      const toSheet = !spec !== !doc.solid
       get().setDoc({ solid: spec, items: sameKind ? doc.items : [] })
       if (!sameKind) set({ selection: [], picks: [], planeChoice: null, message: null, opts: { ...get().opts, workingPlane: 'auto' } })
-      if (toSheet) set({ camera: { ...TEXTBOOK_CAMERA } })
+      if (spec?.kind !== doc.solid?.kind) set({ camera: { ...defaultCamera(spec?.kind ?? null) } })
       if (!spec && toolById(get().tool).solidOnly) set({ tool: 'select' })
     },
     undo() {

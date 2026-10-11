@@ -21,7 +21,9 @@ npm run build    # static build in dist/
 
 - **Figure** — *Sheet (2D)* for plane geometry, or a solid: cube, rectangular box,
   oblique parallelepiped, prism (n = 3…8), pyramid (apex over centre or over a vertex),
-  truncated pyramid, regular tetrahedron and octahedron. Changing the type clears the construction.
+  truncated pyramid, regular tetrahedron and octahedron; bodies of revolution: cylinder, cone,
+  truncated cone, sphere (base circles are clickable circles, points can be put on the curved
+  surface, sections are exact at the base circles). Changing the type clears the construction.
 - **Tools** work by clicking, the hint shows what to click next. In a *point* step a click on a
   line, circle, face or (on the sheet) empty space creates the point there.
   - *Basic*: Select, Point, Segment, Line, Ray, Polygon.

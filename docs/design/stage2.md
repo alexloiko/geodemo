@@ -98,7 +98,7 @@ perpendiculars that fall on an existing point (e.g. a vertex) reuse it instead o
 
 ---
 
-## Phase 3 — triangle in one click
+## Phase 3 — triangle in one click (done)
 
 Three clicks: the vertex the element starts from, then the other two vertices. Works on the sheet
 and in space (in the plane of the three points).
@@ -110,7 +110,7 @@ and in space (in the plane of the three points).
 | Bisector (triangle) | point on the opposite side (`bisectorFoot`), segment, equal-angle arcs |
 | Midline | midpoints of the two adjacent sides + segment |
 | Incircle | incentre `I` + circle (`CircleDef incircle`) |
-| Centroid / orthocentre | point `G` / `H` (`PointDef centroid / orthocenter`) |
+| Centroid / orthocentre | point `G` with dashed medians / point `H` with dashed altitude lines |
 | Centre of a circle | one click on a circle → its centre (`PointDef center`) |
 
 ---

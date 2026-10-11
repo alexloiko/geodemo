@@ -27,6 +27,7 @@ import { type Polyhedron, boundingRadius, edgesOf, faceNormal, flatFaces } from 
 import { type SectionVertex, enclosingBox, section } from '../geometry/section'
 import { rims, surfacePoint } from '../geometry/revolution'
 import { buildSolid } from '../geometry/solids'
+import { bisectorFoot, centroid3, incenter, incircle, orthocenter } from '../geometry/triangle'
 import { type Vec3, cross, dist, dot, len, lerp, normalize, scale, sub } from '../geometry/vec'
 import {
   type CircleItem,
@@ -306,6 +307,10 @@ function evalCircle(it: CircleItem, ev: Evaluated): Circle3 | null {
       const [c, pl] = [P(d.center), resolvePlane(ev, d.plane)]
       return c && pl && d.r > 0 ? { c, n: pl.n, r: d.r } : null
     }
+    case 'incircle': {
+      const [a, b, c] = [P(d.a), P(d.b), P(d.c)]
+      return a && b && c ? incircle(a, b, c) : null
+    }
   }
 }
 
@@ -381,6 +386,19 @@ function evalPoint(it: PointItem, ev: Evaluated): Vec3 | null {
       const [q, pl] = [P(d.point), resolvePlane(ev, d.plane)]
       return q && pl ? sub(q, scale(pl.n, dot(pl.n, q) - pl.d)) : null
     }
+    case 'bisectorFoot':
+    case 'incenter':
+    case 'centroid':
+    case 'orthocenter': {
+      const [a, b, c] = [P(d.a), P(d.b), P(d.c)]
+      if (!a || !b || !c) return null
+      if (d.kind === 'centroid') return centroid3(a, b, c)
+      if (d.kind === 'incenter') return incenter(a, b, c)
+      if (d.kind === 'orthocenter') return orthocenter(a, b, c)
+      return bisectorFoot(a, b, c)
+    }
+    case 'center':
+      return ev.circles.get(d.circle)?.c ?? null
     case 'circlePlane': {
       const [c, pl] = [ev.circles.get(d.circle), ev.planes.get(d.plane)]
       return c && pl ? (circlePlanePoints(c, pl.plane, ev.tol)[d.index] ?? null) : null

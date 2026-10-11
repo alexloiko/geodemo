@@ -1,7 +1,8 @@
 import { tangencyPoints } from '../geometry/circle'
 import { distToLine, foot, linePlane, planePlane, pointAt } from '../geometry/lines'
 import { planeFrom3, signedDist } from '../geometry/plane'
-import { type Vec3, dist } from '../geometry/vec'
+import { type Vec3, dist, dot, sub } from '../geometry/vec'
+import { orthocenter } from '../geometry/triangle'
 import type { DictKey } from '../i18n/en'
 import { makePlane, makePlaneItems } from './build'
 import { type Evaluated, meetPoints, planesContaining, resolveLine, resolvePlane } from './evaluate'
@@ -50,6 +51,14 @@ export type ToolId =
   | 'perpPlane'
   | 'lineAngle'
   | 'planePerpLine'
+  | 'median'
+  | 'altitude'
+  | 'triBisector'
+  | 'midline'
+  | 'incircle'
+  | 'centroid'
+  | 'orthocenter'
+  | 'center'
 
 /** What a tool expects to be clicked next. `curve` = line or circle. */
 export type Slot = 'point' | 'line' | 'circle' | 'curve' | 'face' | 'plane'
@@ -487,6 +496,164 @@ TOOLS.push(
         { id: newId('a'), type: 'angle', a, vertex: oRef, b: hRef, arcs: 1, showValue: true, color: DEFAULT_COLOR.angle, visible: true },
       )
       return { items }
+    },
+  },
+)
+
+// ---------------------------------------------------------------------------
+// triangle tools: clicks are the vertex the element starts from, then the other two
+
+const tri = (picks: Pick[]) => picks.map(refOf) as [PointRef, PointRef, PointRef]
+
+/** A point of the given definition, or the existing point at the same place. */
+function pointOrExisting(ctx: BuildCtx, mk: ReturnType<typeof pointFactory>, def: PointDef, pos: Vec3 | null, prefer?: string) {
+  const existing = pos ? pointAtPos(ctx, pos) : undefined
+  if (existing) return { ref: existing, items: [] as Item[] }
+  const p = mk(def, prefer)
+  return { ref: p.id, items: [p] as Item[] }
+}
+
+const seg = (a: PointRef, b: PointRef, aux = false): Item => ({
+  id: newId('s'),
+  type: 'segment',
+  a,
+  b,
+  aux,
+  color: aux ? AUX_COLOR : DEFAULT_COLOR.segment,
+  visible: true,
+})
+
+const mid = (x: Vec3, y: Vec3): Vec3 => [(x[0] + y[0]) / 2, (x[1] + y[1]) / 2, (x[2] + y[2]) / 2]
+
+function collinear(ctx: BuildCtx, a: PointRef, b: PointRef, c: PointRef) {
+  return !planeFrom3(P(ctx, a), P(ctx, b), P(ctx, c))
+}
+
+TOOLS.push(
+  {
+    id: 'median',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const m = pointOrExisting(ctx, pointFactory(ctx), { kind: 'midpoint', a: b, b: c }, mid(P(ctx, b), P(ctx, c)), 'M')
+      return {
+        items: [
+          ...m.items,
+          seg(a, m.ref),
+          mark({ kind: 'ticks', a: b, b: m.ref, count: 1 }),
+          mark({ kind: 'ticks', a: m.ref, b: c, count: 1 }),
+        ],
+      }
+    },
+  },
+  {
+    id: 'altitude',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const side = pairRef(b, c)
+      const f = foot(resolveLine(ctx.ev, side)!, P(ctx, a))
+      const h = pointOrExisting(ctx, pointFactory(ctx), { kind: 'foot', point: a, line: side }, f, 'H')
+      const items: Item[] = [...h.items, seg(a, h.ref)]
+      // Foot outside the side: extend the side with a dashed auxiliary segment.
+      const [pb, pc] = [P(ctx, b), P(ctx, c)]
+      const t = dot(sub(f, pb), sub(pc, pb)) / dot(sub(pc, pb), sub(pc, pb))
+      if (t < -1e-9) items.push(seg(b, h.ref, true))
+      if (t > 1 + 1e-9) items.push(seg(c, h.ref, true))
+      const other = Math.abs(t) < 1e-9 ? c : b
+      items.push(mark({ kind: 'right', at: h.ref, l1: side, l2: pairRef(a, h.ref), p1: other, p2: a }))
+      return { items }
+    },
+  },
+  {
+    id: 'triBisector',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const l = pointFactory(ctx)({ kind: 'bisectorFoot', a, b, c }, 'L')
+      return { items: [l, seg(a, l.id), mark({ kind: 'equalAngles', a: b, vertex: a, b: c }, DEFAULT_COLOR.angle)] }
+    },
+  },
+  {
+    id: 'midline',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const mk = pointFactory(ctx)
+      const m1 = pointOrExisting(ctx, mk, { kind: 'midpoint', a, b }, mid(P(ctx, a), P(ctx, b)), 'M')
+      const m2 = pointOrExisting(ctx, mk, { kind: 'midpoint', a, b: c }, mid(P(ctx, a), P(ctx, c)), 'N')
+      return { items: [...m1.items, ...m2.items, seg(m1.ref, m2.ref)] }
+    },
+  },
+  {
+    id: 'incircle',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const i = pointFactory(ctx)({ kind: 'incenter', a, b, c }, 'I')
+      return {
+        items: [i, { id: newId('c'), type: 'circle', def: { kind: 'incircle', a, b, c }, color: DEFAULT_COLOR.circle, visible: true }],
+      }
+    },
+  },
+  {
+    id: 'centroid',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const mk = pointFactory(ctx)
+      const items: Item[] = []
+      // The three medians (auxiliary) meet at G.
+      for (const [v, x, y] of [
+        [a, b, c],
+        [b, c, a],
+        [c, a, b],
+      ] as const) {
+        const m = pointOrExisting(ctx, mk, { kind: 'midpoint', a: x, b: y }, mid(P(ctx, x), P(ctx, y)))
+        items.push(...m.items, seg(v, m.ref, true))
+      }
+      items.push(mk({ kind: 'centroid', a, b, c }, 'G'))
+      return { items }
+    },
+  },
+  {
+    id: 'orthocenter',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const mk = pointFactory(ctx)
+      const hPos = orthocenter(P(ctx, a), P(ctx, b), P(ctx, c))!
+      const h = pointOrExisting(ctx, mk, { kind: 'orthocenter', a, b, c }, hPos, 'H')
+      // Lines of the altitudes (auxiliary) through the orthocentre.
+      const items: Item[] = [...h.items]
+      for (const v of [a, b, c]) if (v !== h.ref) items.push(line({ kind: 'through', a: v, b: h.ref }, 'line', true))
+      return { items }
+    },
+  },
+  {
+    id: 'center',
+    group: 'triangle',
+    slots: ['circle'],
+    build: (ctx, [cp]) => {
+      const circle = refOf(cp)
+      const c = ctx.ev.circles.get(circle)
+      if (!c) return { error: 'err.generic' }
+      if (pointAtPos(ctx, c.c)) return { error: 'err.alreadyThere' }
+      return { items: [pointFactory(ctx)({ kind: 'center', circle }, 'O')] }
     },
   },
 )

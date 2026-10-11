@@ -54,6 +54,10 @@ export type PointDef =
   | { kind: 'linePlane'; line: LineRef; plane: PlaneRef }
   /** Orthogonal projection of a point onto a plane (foot of the perpendicular). */
   | { kind: 'projPlane'; point: PointRef; plane: PlaneRef }
+  /** Triangle points; `a` is the vertex the element starts from. */
+  | { kind: 'bisectorFoot' | 'incenter' | 'centroid' | 'orthocenter'; a: PointRef; b: PointRef; c: PointRef }
+  /** Centre of a circle. */
+  | { kind: 'center'; circle: CircleRef }
 
 export type LineDef =
   | { kind: 'through'; a: PointRef; b: PointRef }
@@ -79,6 +83,7 @@ export type CircleDef =
   | { kind: 'centerPoint'; center: PointRef; through: PointRef; plane: PlaneRef }
   | { kind: 'threePoints'; a: PointRef; b: PointRef; c: PointRef }
   | { kind: 'centerRadius'; center: PointRef; r: number; plane: PlaneRef }
+  | { kind: 'incircle'; a: PointRef; b: PointRef; c: PointRef }
 
 export type MarkDef =
   /** Right-angle square at `at` between lines l1 and l2 (towards `p1` / `p2` when given). */
@@ -245,6 +250,15 @@ export function refsOf(item: Item): string[] {
         case 'projPlane':
           add(d.point, d.plane)
           break
+        case 'bisectorFoot':
+        case 'incenter':
+        case 'centroid':
+        case 'orthocenter':
+          add(d.a, d.b, d.c)
+          break
+        case 'center':
+          add(d.circle)
+          break
       }
       break
     }
@@ -280,7 +294,7 @@ export function refsOf(item: Item): string[] {
     }
     case 'circle': {
       const d = item.def
-      if (d.kind === 'threePoints') add(d.a, d.b, d.c)
+      if (d.kind === 'threePoints' || d.kind === 'incircle') add(d.a, d.b, d.c)
       else if (d.kind === 'centerPoint') add(d.center, d.through, d.plane)
       else add(d.center, d.plane)
       break

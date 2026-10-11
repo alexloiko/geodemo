@@ -116,6 +116,14 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
             return t('desc.linePlane', { l: line(d.line), q: plane(d.plane) })
           case 'projPlane':
             return t('desc.projPlane', { p: point(d.point), q: plane(d.plane) })
+          case 'bisectorFoot':
+            return t('desc.bisectorFoot', { a: point(d.a), s: pair(d.b, d.c) })
+          case 'incenter':
+          case 'centroid':
+          case 'orthocenter':
+            return t(`desc.${d.kind}`, { t: point(d.a) + point(d.b) + point(d.c) })
+          case 'center':
+            return t('desc.center', { c: circle(d.circle) })
         }
         break
       }
@@ -147,6 +155,7 @@ export function makeNamer(doc: Doc, ev: Evaluated, t: T) {
         const d = it.def
         if (d.kind === 'centerPoint') return t('desc.circleCP', { c: point(d.center), p: point(d.through) })
         if (d.kind === 'threePoints') return t('desc.circle3', { a: point(d.a), b: point(d.b), c: point(d.c) })
+        if (d.kind === 'incircle') return t('desc.incircle', { t: point(d.a) + point(d.b) + point(d.c) })
         return t('desc.circleCR', { c: point(d.center), r: String(d.r) })
       }
       case 'polygon':

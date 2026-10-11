@@ -168,4 +168,57 @@ const ICONS: Record<ToolId, React.ReactNode> = {
       <path d="M2 11h20" />
     </>
   ),
+  median: (
+    <>
+      <path d="M3 20L10 4l11 16z" />
+      <path d="M10 4l5.5 16" />
+      <path d="M12 18v4M19 18v4" strokeWidth={1.2} />
+    </>
+  ),
+  altitude: (
+    <>
+      <path d="M3 20L9 4l12 16z" />
+      <path d="M9 4v16" />
+      <path d="M9 17h3v3" strokeWidth={1.2} />
+    </>
+  ),
+  triBisector: (
+    <>
+      <path d="M3 20L9 4l12 16z" />
+      <path d="M9 4l5 16" />
+      <path d="M7.8 8a3 3 0 0 0 2.6.3" strokeWidth={1.2} />
+    </>
+  ),
+  midline: (
+    <>
+      <path d="M3 20L12 4l9 16z" />
+      <path d="M7.5 12h9" strokeWidth={2.2} />
+    </>
+  ),
+  incircle: (
+    <>
+      <path d="M2 21L12 3l10 18z" />
+      <circle cx={12} cy={15} r={5} />
+    </>
+  ),
+  centroid: (
+    <>
+      <path d="M3 20L12 4l9 16z" />
+      <path d="M12 4v16M3 20l13.5-8M21 20L7.5 12" strokeWidth={1} strokeDasharray="2 2" />
+      {dot(12, 14.7)}
+    </>
+  ),
+  orthocenter: (
+    <>
+      <path d="M3 20L10 4l11 16z" />
+      <path d="M10 4v16M3 20l15-7.5" strokeWidth={1} strokeDasharray="2 2" />
+      {dot(10, 16.5)}
+    </>
+  ),
+  center: (
+    <>
+      <circle cx={12} cy={12} r={8} />
+      {dot(12, 12, true)}
+    </>
+  ),
 }

@@ -1,4 +1,4 @@
-import { tangencyPoints } from '../geometry/circle'
+import { circumcircle, tangencyPoints } from '../geometry/circle'
 import { distToLine, foot, linePlane, planePlane, pointAt } from '../geometry/lines'
 import { planeFrom3, signedDist } from '../geometry/plane'
 import { type Vec3, dist, dot, sub } from '../geometry/vec'
@@ -60,6 +60,7 @@ export type ToolId =
   | 'triBisector'
   | 'midline'
   | 'incircle'
+  | 'circumcircle'
   | 'centroid'
   | 'orthocenter'
   | 'center'
@@ -637,6 +638,20 @@ TOOLS.push(
     },
   },
   {
+    id: 'circumcircle',
+    group: 'triangle',
+    slots: ['point', 'point', 'point'],
+    build: (ctx, picks) => {
+      const [a, b, c] = tri(picks)
+      if (collinear(ctx, a, b, c)) return { error: 'err.collinear' }
+      const circle: Item = { id: newId('c'), type: 'circle', def: { kind: 'threePoints', a, b, c }, color: DEFAULT_COLOR.circle, visible: true }
+      const centre = circumcircle(P(ctx, a), P(ctx, b), P(ctx, c))!.c
+      const items: Item[] = [circle]
+      if (!pointAtPos(ctx, centre)) items.push(pointFactory(ctx)({ kind: 'center', circle: circle.id }, 'O'))
+      return { items }
+    },
+  },
+  {
     id: 'centroid',
     group: 'triangle',
     slots: ['point', 'point', 'point'],
@@ -676,7 +691,7 @@ TOOLS.push(
   },
   {
     id: 'center',
-    group: 'triangle',
+    group: 'circles',
     slots: ['circle'],
     build: (ctx, [cp]) => {
       const circle = refOf(cp)
@@ -783,7 +798,7 @@ TOOLS.push(
   },
   {
     id: 'vector',
-    group: 'measure',
+    group: 'transform',
     slots: ['point', 'point'],
     build: (_ctx, [a, b]) => ({
       items: [{ id: newId('v'), type: 'vector', a: refOf(a), b: refOf(b), color: DEFAULT_COLOR.vector, visible: true }],
@@ -797,7 +812,7 @@ TOOLS.push(
 TOOLS.push(
   {
     id: 'vectorSum',
-    group: 'measure',
+    group: 'transform',
     slots: ['vector', 'vector'],
     build: (ctx, [p1, p2]) => {
       const [v1, v2] = [refOf(p1), refOf(p2)].map((id) => ctx.doc.items.find((i) => i.id === id))
@@ -839,6 +854,28 @@ TOOLS.push(
 )
 
 export const toolById = (id: ToolId): ToolDef => TOOLS.find((t) => t.id === id)!
+
+/** Display order of the tools inside their groups. */
+export const TOOL_ORDER: ToolId[] = [
+  // basic
+  'select', 'point', 'segment', 'line', 'ray', 'polygon',
+  // construct
+  'midpoint', 'perpendicular', 'parallel', 'perpBisector', 'angleBisector', 'intersect',
+  // triangle
+  'median', 'altitude', 'triBisector', 'midline', 'incircle', 'circumcircle', 'centroid', 'orthocenter',
+  // circles
+  'circleCP', 'circle3', 'circleCR', 'tangent', 'center',
+  // vectors & transforms
+  'vector', 'vectorSum', 'translate', 'reflectPoint', 'reflectLine', 'rotate', 'dilate',
+  // marks & measures
+  'angle', 'length', 'area', 'ratio', 'ticks', 'text',
+  // space
+  'plane', 'face', 'trace', 'planesMeet', 'parallelPlane', 'planePerpLine', 'perpPlane', 'lineAngle',
+]
+
+/** Tools of a group in display order. */
+export const toolsOf = (g: ToolGroup): ToolDef[] =>
+  TOOLS.filter((t) => t.group === g).sort((a, b) => TOOL_ORDER.indexOf(a.id) - TOOL_ORDER.indexOf(b.id))
 
 export const GROUPS: ToolGroup[] = ['basic', 'construct', 'triangle', 'circles', 'transform', 'measure', 'space']
 

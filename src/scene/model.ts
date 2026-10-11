@@ -236,6 +236,24 @@ export interface Doc {
   items: Item[]
 }
 
+/** Order of the groups in the element list; the record makes the list exhaustive at compile time. */
+const ITEM_TYPE_ORDER: Record<ItemType, number> = {
+  point: 0,
+  segment: 1,
+  line: 2,
+  vector: 3,
+  circle: 4,
+  polygon: 5,
+  angle: 6,
+  plane: 7,
+  face: 8,
+  mark: 9,
+  ratio: 10,
+  measure: 11,
+  text: 12,
+}
+export const ITEM_TYPES = (Object.keys(ITEM_TYPE_ORDER) as ItemType[]).sort((a, b) => ITEM_TYPE_ORDER[a] - ITEM_TYPE_ORDER[b])
+
 export const PALETTE = ['#2f45d8', '#d1382c', '#2e9a5a', '#f0a23a', '#8a8a8a', '#8e44ad', '#111111']
 
 export const DEFAULT_COLOR: Record<ItemType, string> = {

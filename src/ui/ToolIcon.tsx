@@ -296,4 +296,11 @@ const ICONS: Record<ToolId, React.ReactNode> = {
       T
     </text>
   ),
+  circumcircle: (
+    <>
+      <circle cx={12} cy={12} r={9.5} />
+      <path d="M4 16.5L12 2.5l8 14z" />
+      {dot(12, 12)}
+    </>
+  ),
 }

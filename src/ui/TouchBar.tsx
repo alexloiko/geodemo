@@ -1,5 +1,5 @@
 import { type DictKey, useT } from '../i18n'
-import { TOOLS } from '../scene/tools'
+import { TOOLS, toolsOf } from '../scene/tools'
 import { useStore } from '../store/store'
 import { ToolIcon } from './ToolIcon'
 
@@ -20,7 +20,7 @@ export function TouchBar({ compact }: { compact: boolean }) {
           <button className="tb-btn wide" onClick={() => st.setUi({ drawerOpen: true })}>
             ☰ {t('tools')}
           </button>
-          {TOOLS.filter((d) => d.group === 'basic').map((d) => (
+          {toolsOf('basic').map((d) => (
             <button key={d.id} className={`tb-btn tool-btn ${st.tool === d.id ? 'on' : ''}`} onClick={() => st.setTool(d.id)} aria-label={t(`tool.${d.id}` as DictKey)}>
               <ToolIcon tool={d.id} />
             </button>

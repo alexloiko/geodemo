@@ -243,6 +243,9 @@ export const useStore = create<State>((set, get) => {
       const slot = nextSlot(def, picks)
       if (tool === 'select' || !slot) return
       const ev = evaluate(doc)
+      // Ignore clicks on things that are not (or no longer) valid lines / circles.
+      if (h.kind === 'line' && !resolveLine(ev, h.ref)) return
+      if (h.kind === 'circle' && !ev.circles.has(h.ref)) return
 
       // Turn the click into a pick for the expected slot.
       let pick: Pick | null = null

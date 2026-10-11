@@ -183,7 +183,7 @@ export const en = {
   "desc.circlePlane": "on {c}",
   "rim": "base",
   "group.triangle": "Triangle",
-  "group.transform": "Transform",
+  "group.transform": "Vectors & transforms",
   "group.measure": "Marks & measures",
   "group.space": "Space",
   "tool.trace": "Trace",
@@ -274,6 +274,8 @@ export const en = {
   "deleteSelected": "Delete selected",
   "hidePanel": "Hide the panel",
   "hint.select.touch": "Drag with one finger to rotate (on the sheet: to move) · two fingers to zoom and move · tap to select · long press adds to the selection · drag points along edges.",
+  "tool.circumcircle": "Circumcircle",
+  "hint.circumcircle": "Click the three vertices: the circumscribed circle and its centre O.",
 }
 
 export type Dict = typeof en

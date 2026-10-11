@@ -6,9 +6,9 @@ import { flatFaces } from '../geometry/polyhedron'
 import { evaluate } from '../scene/evaluate'
 import { loadExample } from '../scene/example'
 import { prettyLabel } from '../scene/labels'
-import { type ItemType, PALETTE } from '../scene/model'
+import { ITEM_TYPES, PALETTE } from '../scene/model'
 import { makeNamer } from '../scene/names'
-import { GROUPS, TOOLS, type ToolGroup, toolById } from '../scene/tools'
+import { GROUPS, type TOOLS, type ToolGroup, toolById, toolsOf } from '../scene/tools'
 import { type DisplayMode, useStore } from '../store/store'
 import { ConstructionForm, type FormKind } from './forms'
 import { ToolIcon } from './ToolIcon'
@@ -17,7 +17,6 @@ import { useDevice } from './device'
 const FORMS_3D: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
 const FORMS_2D: FormKind[] = ['coords', 'segment', 'intersection', 'ratio']
 const FORMS_ROUND: FormKind[] = ['segment', 'intersection', 'plane', 'ratio']
-const TYPES: ItemType[] = ['point', 'segment', 'line', 'vector', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio', 'measure', 'text']
 const MODES: DisplayMode[] = ['all', 'focus', 'selected']
 
 export function Sidebar() {
@@ -163,7 +162,7 @@ function ToolsPanel() {
   const names = useMemo(() => makeNamer(doc, ev, t), [doc, ev, t])
   const sheet = !doc.solid
   const { touch } = useDevice()
-  const available = (g: ToolGroup) => TOOLS.filter((d) => d.group === g && !(sheet && d.solidOnly))
+  const available = (g: ToolGroup) => toolsOf(g).filter((d) => !(sheet && d.solidOnly))
   const tabs = GROUPS.filter((g) => g !== 'basic' && available(g).length > 0)
   const toolGroup = toolById(tool).group
   const [tab, setTab] = useState<ToolGroup>(toolGroup !== 'basic' ? toolGroup : 'construct')
@@ -343,7 +342,7 @@ function ElementsPanel() {
 
   return (
     <Section title={t('elements')}>
-      {TYPES.map((type) => {
+      {ITEM_TYPES.map((type) => {
         const items = doc.items.filter((i) => i.type === type)
         if (!items.length) return null
         return (

@@ -32,12 +32,12 @@ npm run build    # static build in dist/
     the line → in the working plane), Parallel, Perpendicular bisector, Angle bisector, Intersect
     (any two lines / segments / edges / circles).
   - *Triangle* (vertex first, then the other two): median, altitude, bisector, midline, incircle,
-    centroid, orthocentre; centre of a circle.
-  - *Circles*: centre + point, three points, centre + radius, tangents from a point.
-  - *Transform*: point and line symmetry, rotation, translation by a vector, homothety; images
-    keep their structure and get primed labels (A′, A″).
-  - *Marks & measures*: angle (with degrees), ratio arc, equal-segment ticks, vector, vector sum,
-    length, area, text notes. Constructions add the usual marks themselves.
+    circumcircle, centroid, orthocentre.
+  - *Circles*: centre + point, three points, centre + radius, tangents from a point, centre of a circle.
+  - *Vectors & transforms*: vector, vector sum, translation by a vector, point and line symmetry,
+    rotation, homothety; images keep their structure and get primed labels (A′, A″).
+  - *Marks & measures*: angle (with degrees), length, area, ratio arc, equal-segment ticks, text
+    notes. Constructions add the usual marks themselves.
   - *Space* (solids): plane through 3 points (section built automatically), face highlight, trace
     of a line on a plane, intersection of planes, parallel plane, perpendicular to a plane,
     line–plane angle, plane perpendicular to a line.

@@ -185,7 +185,7 @@ export const uk: Dict = {
   "desc.circlePlane": "на {c}",
   "rim": "основа",
   "group.triangle": "Трикутник",
-  "group.transform": "Перетворення",
+  "group.transform": "Вектори й перетворення",
   "group.measure": "Позначки й виміри",
   "group.space": "Простір",
   "tool.trace": "Слід",
@@ -276,4 +276,6 @@ export const uk: Dict = {
   "deleteSelected": "Видалити вибране",
   "hidePanel": "Сховати панель",
   "hint.select.touch": "Тягніть одним пальцем, щоб обертати (на аркуші — посувати) · двома пальцями — масштаб і зсув · дотик — вибір · довге натискання додає до вибраного · точки можна тягти вздовж ребер.",
+  "tool.circumcircle": "Описане коло",
+  "hint.circumcircle": "Клікніть три вершини: описане коло і його центр O.",
 }

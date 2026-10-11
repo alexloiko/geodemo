@@ -1,10 +1,16 @@
-const POOL = 'KLMNPQRTEFGHUVWXYZ'
+const POOL_3D = 'KLMNPQRTEFGHUVWXYZ'
+const POOL_2D = 'ABCDEFGHKLMNOPQRSTUVWXYZ'
 
-/** Next free single-letter label, then K_2, L_2, … */
-export function nextLabel(used: Iterable<string>): string {
+/**
+ * Next free label: the preferred letter if free, otherwise the next single letter
+ * from the pool (K, L, M … on solids; A, B, C … on the sheet), then K_2, L_2, …
+ */
+export function nextLabel(used: Iterable<string>, opts: { prefer?: string; sheet?: boolean } = {}): string {
   const set = new Set(used)
+  if (opts.prefer && !set.has(opts.prefer)) return opts.prefer
+  const pool = opts.sheet ? POOL_2D : POOL_3D
   for (let k = 1; k < 100; k++) {
-    for (const ch of POOL) {
+    for (const ch of pool) {
       const name = k === 1 ? ch : `${ch}_${k}`
       if (!set.has(name)) return name
     }

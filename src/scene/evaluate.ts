@@ -1,9 +1,40 @@
+import {
+  type Circle3,
+  circleCenterPoint,
+  circleCircle,
+  circumcircle,
+  lineCircle,
+  pointOnCircle,
+  tangencyPoints,
+} from '../geometry/circle'
+import {
+  type Line3,
+  angleBisector,
+  foot,
+  lineLine,
+  lineThrough,
+  parallelThrough,
+  perpBisector,
+  perpendicularThrough,
+  pointAt,
+} from '../geometry/lines'
 import { type Plane, intersectLines, planeFrom3, signedDist } from '../geometry/plane'
-import { type Polyhedron, edgesOf } from '../geometry/polyhedron'
+import { type Polyhedron, boundingRadius, edgesOf, faceNormal } from '../geometry/polyhedron'
 import { type SectionVertex, enclosingBox, section } from '../geometry/section'
 import { buildSolid } from '../geometry/solids'
-import { type Vec3, dist, lerp } from '../geometry/vec'
-import type { Doc, Item, PointRef } from './model'
+import { type Vec3, cross, dist, dot, len, lerp, normalize, sub } from '../geometry/vec'
+import {
+  type CircleItem,
+  type Doc,
+  type LineItem,
+  type LineRef,
+  type PlaneRef,
+  type PointItem,
+  type PointRef,
+  SHEET,
+  parseFaceRef,
+  parsePairRef,
+} from './model'
 
 export interface EvalPlane {
   plane: Plane
@@ -13,102 +44,287 @@ export interface EvalPlane {
   extension: Vec3[]
 }
 
+/** An evaluated line-like object. For two-point lines p = A and d = B − A. */
+export interface EvLine extends Line3 {
+  a?: PointRef
+  b?: PointRef
+  extent: 'segment' | 'line' | 'ray'
+}
+
 export interface Evaluated {
-  solid: Polyhedron
+  /** null on the 2D sheet. */
+  solid: Polyhedron | null
   points: Map<PointRef, Vec3>
   /** Labels of every point (vertices and point items). */
   labels: Map<PointRef, string>
   planes: Map<string, EvalPlane>
+  /** Segment and line items. */
+  lines: Map<string, EvLine>
+  circles: Map<string, Circle3>
   /** Items whose geometry could not be computed (e.g. skew lines). */
   invalid: Set<string>
+  /** Typical size of the scene, for tolerances. */
+  scaleRef: number
+  tol: number
 }
+
+const SHEET_PLANE: Plane = { n: [0, 0, 1], d: 0 }
 
 export function evaluate(doc: Doc): Evaluated {
-  const solid = buildSolid(doc.solid)
-  const points = new Map<PointRef, Vec3>()
-  const labels = new Map<PointRef, string>()
-  solid.vertices.forEach((v, i) => {
-    points.set(`v${i}`, v.pos)
-    labels.set(`v${i}`, v.label)
+  const solid = doc.solid ? buildSolid(doc.solid) : null
+  const scaleRef = solid ? Math.max(boundingRadius(solid), 1) : 10
+  const ev: Evaluated = {
+    solid,
+    points: new Map(),
+    labels: new Map(),
+    planes: new Map(),
+    lines: new Map(),
+    circles: new Map(),
+    invalid: new Set(),
+    scaleRef,
+    tol: 1e-6 * scaleRef,
+  }
+  solid?.vertices.forEach((v, i) => {
+    ev.points.set(`v${i}`, v.pos)
+    ev.labels.set(`v${i}`, v.label)
   })
-  const planes = new Map<string, EvalPlane>()
-  const invalid = new Set<string>()
-  const box = enclosingBox(solid)
-  const get = (r: PointRef) => points.get(r)
+  const box = solid ? enclosingBox(solid) : null
 
   for (const it of doc.items) {
-    if (it.type === 'point') {
-      labels.set(it.id, it.label)
-      const p = evalPoint(it, solid, get, planes)
-      if (p) points.set(it.id, p)
-      else invalid.add(it.id)
-    } else if (it.type === 'plane') {
-      const [a, b, c] = [get(it.a), get(it.b), get(it.c)]
-      const pl = a && b && c ? planeFrom3(a, b, c) : null
-      if (!pl) {
-        invalid.add(it.id)
-        continue
+    let ok = true
+    switch (it.type) {
+      case 'point': {
+        ev.labels.set(it.id, it.label)
+        const p = evalPoint(it, ev)
+        if (p) ev.points.set(it.id, p)
+        else ok = false
+        break
       }
-      planes.set(it.id, {
-        plane: pl,
-        section: section(solid, pl),
-        refs: [],
-        extension: section(box, pl).map((v) => v.pos),
-      })
-    } else if (needsPoints(it) && !refsOf(it).every((r) => points.has(r))) {
-      invalid.add(it.id)
+      case 'segment': {
+        const [a, b] = [ev.points.get(it.a), ev.points.get(it.b)]
+        const l = a && b ? lineThrough(a, b) : null
+        if (l) ev.lines.set(it.id, { ...l, a: it.a, b: it.b, extent: 'segment' })
+        else ok = false
+        break
+      }
+      case 'line': {
+        const l = evalLine(it, ev)
+        if (l) ev.lines.set(it.id, l)
+        else ok = false
+        break
+      }
+      case 'circle': {
+        const c = evalCircle(it, ev)
+        if (c) ev.circles.set(it.id, c)
+        else ok = false
+        break
+      }
+      case 'plane': {
+        const [a, b, c] = [ev.points.get(it.a), ev.points.get(it.b), ev.points.get(it.c)]
+        const pl = a && b && c ? planeFrom3(a, b, c) : null
+        if (!pl || !solid || !box) {
+          ok = false
+          break
+        }
+        ev.planes.set(it.id, {
+          plane: pl,
+          section: section(solid, pl),
+          refs: [],
+          extension: section(box, pl).map((v) => v.pos),
+        })
+        break
+      }
+      case 'face':
+        ok = !!solid?.faces[it.face]
+        break
+      case 'polygon':
+        ok = it.pts.length >= 3 && it.pts.every((p) => ev.points.has(p))
+        break
+      case 'angle':
+        ok = [it.a, it.vertex, it.b].every((p) => ev.points.has(p))
+        break
+      case 'ratio':
+        ok = ev.points.has(it.a) && ev.points.has(it.b)
+        break
+      case 'mark':
+        ok = true
+        break
     }
+    if (!ok) ev.invalid.add(it.id)
   }
+
   // Section vertices get their refs once all points (incl. later edgePlane points) exist.
-  const tol = 1e-6 * Math.max(...solid.vertices.map((v) => Math.hypot(...v.pos)), 1)
-  for (const pl of planes.values())
+  for (const pl of ev.planes.values())
     pl.refs = pl.section.map((v) => {
-      for (const [ref, p] of points) if (dist(p, v.pos) < tol) return ref
+      for (const [ref, p] of ev.points) if (dist(p, v.pos) < ev.tol) return ref
       return null
     })
-  return { solid, points, labels, planes, invalid }
+  return ev
 }
 
-function needsPoints(it: Item): boolean {
-  return it.type === 'segment' || it.type === 'line' || it.type === 'ratio'
+/** A line item, a segment item or an implicit "a|b" line. */
+export function resolveLine(ev: Evaluated, ref: LineRef): EvLine | null {
+  const l = ev.lines.get(ref)
+  if (l) return l
+  const pair = parsePairRef(ref)
+  if (!pair) return null
+  const [a, b] = [ev.points.get(pair[0]), ev.points.get(pair[1])]
+  const t = a && b ? lineThrough(a, b) : null
+  return t ? { ...t, a: pair[0], b: pair[1], extent: 'line' } : null
 }
 
-function refsOf(it: Item): PointRef[] {
-  return 'a' in it && 'b' in it ? [it.a, it.b] : []
+export function resolvePlane(ev: Evaluated, ref: PlaneRef | undefined): Plane | null {
+  if (!ref) return null
+  if (ref === SHEET) return SHEET_PLANE
+  const f = parseFaceRef(ref)
+  if (f !== null) {
+    if (!ev.solid || !ev.solid.faces[f]) return null
+    const n = faceNormal(ev.solid, f)
+    return { n, d: dot(n, ev.solid.vertices[ev.solid.faces[f][0]].pos) }
+  }
+  return ev.planes.get(ref)?.plane ?? null
 }
 
-function evalPoint(
-  it: Extract<Item, { type: 'point' }>,
-  solid: Polyhedron,
-  get: (r: PointRef) => Vec3 | undefined,
-  planes: Map<string, EvalPlane>,
-): Vec3 | null {
+/** Planes (sheet, faces, plane items) that contain all the given points. */
+export function planesContaining(ev: Evaluated, pts: Vec3[]): PlaneRef[] {
+  if (!ev.solid) return [SHEET]
+  const out: PlaneRef[] = []
+  const on = (pl: Plane) => pts.every((p) => Math.abs(signedDist(pl, p)) < ev.tol * 10)
+  ev.solid.faces.forEach((_, i) => {
+    const pl = resolvePlane(ev, `f${i}`)
+    if (pl && on(pl)) out.push(`f${i}`)
+  })
+  for (const [id, pl] of ev.planes) if (on(pl.plane)) out.push(id)
+  return out
+}
+
+function evalLine(it: LineItem, ev: Evaluated): EvLine | null {
+  const P = (r: PointRef) => ev.points.get(r)
+  const d = it.def
+  const extent = it.extent === 'ray' ? 'ray' : 'line'
+  switch (d.kind) {
+    case 'through': {
+      const [a, b] = [P(d.a), P(d.b)]
+      const l = a && b ? lineThrough(a, b) : null
+      return l ? { ...l, a: d.a, b: d.b, extent } : null
+    }
+    case 'parallel': {
+      const [q, L] = [P(d.point), resolveLine(ev, d.line)]
+      return q && L ? { ...parallelThrough(L, q), extent } : null
+    }
+    case 'perpendicular': {
+      const [q, L] = [P(d.point), resolveLine(ev, d.line)]
+      if (!q || !L) return null
+      const pl = resolvePlane(ev, d.plane)
+      const l = perpendicularThrough(L, q, pl?.n ?? null, ev.tol)
+      return l ? { ...l, extent } : null
+    }
+    case 'perpBisector': {
+      const [a, b, pl] = [P(d.a), P(d.b), resolvePlane(ev, d.plane)]
+      const l = a && b && pl ? perpBisector(a, b, pl.n) : null
+      return l ? { ...l, extent } : null
+    }
+    case 'angleBisector': {
+      const [a, o, b] = [P(d.a), P(d.vertex), P(d.b)]
+      const l = a && o && b ? angleBisector(a, o, b) : null
+      return l ? { ...l, extent } : null
+    }
+    case 'tangent': {
+      const [c, q] = [ev.circles.get(d.circle), P(d.point)]
+      if (!c || !q) return null
+      const t = tangencyPoints(c, q, ev.tol)[d.index]
+      if (!t) return null
+      const dir = dist(t, q) < ev.tol ? cross(c.n, sub(t, c.c)) : sub(t, q)
+      return len(dir) < 1e-12 ? null : { p: q, d: normalize(dir), extent }
+    }
+  }
+}
+
+function evalCircle(it: CircleItem, ev: Evaluated): Circle3 | null {
+  const P = (r: PointRef) => ev.points.get(r)
+  const d = it.def
+  switch (d.kind) {
+    case 'threePoints': {
+      const [a, b, c] = [P(d.a), P(d.b), P(d.c)]
+      return a && b && c ? circumcircle(a, b, c) : null
+    }
+    case 'centerPoint': {
+      const [c, p, pl] = [P(d.center), P(d.through), resolvePlane(ev, d.plane)]
+      return c && p && pl ? circleCenterPoint(c, p, pl.n) : null
+    }
+    case 'centerRadius': {
+      const [c, pl] = [P(d.center), resolvePlane(ev, d.plane)]
+      return c && pl && d.r > 0 ? { c, n: pl.n, r: d.r } : null
+    }
+  }
+}
+
+/** All intersection points of two line-like / circle objects, in a stable order. */
+export function meetPoints(ev: Evaluated, o1: string, o2: string): Vec3[] {
+  const c1 = ev.circles.get(o1)
+  const c2 = ev.circles.get(o2)
+  const l1 = c1 ? null : resolveLine(ev, o1)
+  const l2 = c2 ? null : resolveLine(ev, o2)
+  if (l1 && l2) {
+    const p = lineLine(l1, l2)
+    return p ? [p] : []
+  }
+  if (l1 && c2) return lineCircle(l1, c2, ev.tol)
+  if (c1 && l2) return lineCircle(l2, c1, ev.tol)
+  if (c1 && c2) return circleCircle(c1, c2, ev.tol)
+  return []
+}
+
+function evalPoint(it: PointItem, ev: Evaluated): Vec3 | null {
+  const P = (r: PointRef) => ev.points.get(r)
   const d = it.def
   switch (d.kind) {
     case 'onSegment': {
-      const a = get(d.a)
-      const b = get(d.b)
+      const [a, b] = [P(d.a), P(d.b)]
       return a && b ? lerp(a, b, d.t) : null
     }
+    case 'onLine': {
+      const l = resolveLine(ev, d.line)
+      return l ? pointAt(l, d.t) : null
+    }
     case 'intersection': {
-      const [a1, a2, b1, b2] = [get(d.a1), get(d.a2), get(d.b1), get(d.b2)]
+      const [a1, a2, b1, b2] = [P(d.a1), P(d.a2), P(d.b1), P(d.b2)]
       return a1 && a2 && b1 && b2 ? intersectLines(a1, a2, b1, b2) : null
     }
     case 'edgePlane': {
-      const pl = planes.get(d.plane)
-      const a = solid.vertices[d.a]?.pos
-      const b = solid.vertices[d.b]?.pos
+      const pl = ev.planes.get(d.plane)
+      const a = ev.solid?.vertices[d.a]?.pos
+      const b = ev.solid?.vertices[d.b]?.pos
       if (!pl || !a || !b) return null
       const da = signedDist(pl.plane, a)
       const db = signedDist(pl.plane, b)
       if (da * db > 0 || da === db) return null
       return lerp(a, b, da / (da - db))
     }
+    case 'free':
+      return d.pos
+    case 'midpoint': {
+      const [a, b] = [P(d.a), P(d.b)]
+      return a && b ? lerp(a, b, 0.5) : null
+    }
+    case 'onCircle': {
+      const c = ev.circles.get(d.circle)
+      return c ? pointOnCircle(c, d.angle) : null
+    }
+    case 'meet':
+      return meetPoints(ev, d.o1, d.o2)[d.index] ?? null
+    case 'foot': {
+      const [q, l] = [P(d.point), resolveLine(ev, d.line)]
+      return q && l ? foot(l, q) : null
+    }
+    case 'tangency': {
+      const [c, q] = [ev.circles.get(d.circle), P(d.point)]
+      return c && q ? (tangencyPoints(c, q, ev.tol)[d.index] ?? null) : null
+    }
   }
 }
 
 /** Solid edges as vertex refs, for pickers and forms. */
-export function solidEdges(solid: Polyhedron): [PointRef, PointRef][] {
-  return edgesOf(solid).map((e) => [`v${e.a}`, `v${e.b}`])
+export function solidEdges(solid: Polyhedron | null): [PointRef, PointRef][] {
+  return solid ? edgesOf(solid).map((e) => [`v${e.a}`, `v${e.b}`]) : []
 }
-

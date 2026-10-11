@@ -9,10 +9,12 @@ export interface Camera {
   pitch: number
   zoom: number
   projection: Projection
+  /** Screen offset in px (panning). */
+  pan: [number, number]
 }
 
-export const TEXTBOOK_CAMERA: Camera = { yaw: 0, pitch: 0, zoom: 1, projection: 'oblique' }
-export const ORTHO_CAMERA: Camera = { yaw: -28, pitch: 18, zoom: 1, projection: 'orthographic' }
+export const TEXTBOOK_CAMERA: Camera = { yaw: 0, pitch: 0, zoom: 1, projection: 'oblique', pan: [0, 0] }
+export const ORTHO_CAMERA: Camera = { yaw: -28, pitch: 18, zoom: 1, projection: 'orthographic', pan: [0, 0] }
 
 /** Cabinet projection: receding axis drawn at 45°, foreshortened by half. */
 const K = 0.5
@@ -62,4 +64,10 @@ export function makeProjector(cam: Camera): Projector {
     },
     toViewer: rotInv([0, -1, 0]),
   }
+}
+
+/** Top view of the 2D sheet (z = 0). */
+export const SHEET_PROJECTOR: Projector = {
+  project: (p) => [p[0], p[1]],
+  toViewer: [0, 0, 1],
 }

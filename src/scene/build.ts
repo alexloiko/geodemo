@@ -29,7 +29,7 @@ export function makePointOnSegment(
   return {
     id: newId('p'),
     type: 'point',
-    label: label || nextLabel(usedLabels(doc)),
+    label: label || nextLabel(usedLabels(doc), { sheet: !doc.solid }),
     color: DEFAULT_COLOR.point,
     visible: true,
     def: line ? { kind: 'onSegment', a, b, t, line } : { kind: 'onSegment', a, b, t },
@@ -74,7 +74,7 @@ export function makePlane(doc: Doc, a: PointRef, b: PointRef, c: PointRef, exten
   }
   const withPlane: Doc = { ...doc, items: [...doc.items, plane] }
   const sec = evaluate(withPlane).planes.get(plane.id)?.section ?? []
-  const tol = 1e-6 * Math.max(...ev.solid.vertices.map((v) => Math.hypot(...v.pos)), 1)
+  const tol = ev.tol
   const existing = [...ev.points.values()]
   const out: Item[] = [plane]
   const labels = usedLabels(doc)

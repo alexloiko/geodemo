@@ -7,6 +7,8 @@ src/
   geometry/   pure math (no React), unit-tested
     vec.ts          Vec3 helpers
     plane.ts        plane from 3 points, line ∩ line, segment ∩ plane
+    lines.ts        lines p + t·d: foot, parallel, perpendicular (in a plane), bisectors
+    circle.ts       circles {c, n, r}: circumcircle, line ∩ circle, circle ∩ circle, tangents
     polyhedron.ts   convex polyhedron model, outward faces, edges, half-spaces
     solids.ts       SolidSpec → Polyhedron generators with textbook labels
     section.ts      convex polyhedron ∩ plane → ordered polygon; enclosing box
@@ -15,6 +17,8 @@ src/
     model.ts        Item types (point, segment, line, plane, face, ratio), dependencies
     evaluate.ts     Doc → computed 3D geometry (points, sections, invalid items)
     build.ts        item factories (point on segment, intersection, plane + section points, ratio marks)
+    tools.ts        click tools: input slots (point / line / circle / face) and builders
+    names.ts        display names and descriptions (a, b … for lines, ω for circles)
     labels.ts       automatic names (K, L, M, …), subscripts
     example.ts      the textbook example document
   render/
@@ -29,15 +33,27 @@ src/
 
 ## Data model
 
-A `Doc` is `{ solid: SolidSpec, items: Item[] }`. Points are referenced either as solid
-vertices (`"v3"`) or by item id. Items only reference earlier items, so evaluation is a
-single pass in order. Kinds of point:
+A `Doc` is `{ solid: SolidSpec | null, items: Item[] }`; `solid: null` is the 2D sheet (a scene in
+the plane z = 0 viewed from the top — the same 3D engine). References:
 
-- `onSegment {a, b, t}` — on an edge or user segment (dragging changes `t`);
-- `intersection {a1, a2, b1, b2}` — of two lines, invalid when skew/parallel;
-- `edgePlane {a, b, plane}` — where a plane cuts a solid edge (created with a section).
+- points: solid vertices (`"v3"`) or point item ids;
+- lines: segment/line item ids or implicit two-point lines `"p1|p2"` (edges, section and polygon sides);
+- planes: `"sheet"`, faces `"f2"` or plane item ids.
 
-Deleting an item removes all items depending on it.
+Items only reference earlier items, so evaluation is a single pass in order. Item types: point
+(many definitions — on segment/line/circle, free, midpoint, intersections, foot, tangency, edge ∩
+plane), segment, line (through two points, parallel, perpendicular, perpendicular bisector, angle
+bisector, tangent; extent line or ray), circle, polygon, angle, mark (right angle, ticks, equal
+angles), plane (section), face highlight, ratio arc. Deleting an item removes its dependents.
+
+Constructions that are ambiguous in space (perpendicular through a point on the line,
+perpendicular bisector, circle by centre) store the plane they were built in.
+
+## Tools
+
+`scene/tools.ts` declares every tool as a list of input *slots* plus a `build` function returning
+new items, an error, or a request to choose a plane. The store turns canvas clicks into picks
+(creating points on lines/circles/faces/sheet where a point is expected) and runs the builder.
 
 ## Rendering
 

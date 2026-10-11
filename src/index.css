@@ -471,3 +471,117 @@ label.check {
   fill: #b86a00;
   font-weight: 600;
 }
+
+/* ---------- tool groups ---------- */
+.tool-group + .tool-group {
+  margin-top: 8px;
+}
+.group-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.tools {
+  grid-template-columns: repeat(4, 1fr);
+}
+.tool span {
+  font-size: 10.5px;
+  line-height: 1.15;
+  text-align: center;
+}
+.tool-status {
+  min-height: 34px;
+}
+.hint.error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.hint.note {
+  color: var(--accent);
+  font-weight: 600;
+}
+.btn.inline {
+  margin-left: 8px;
+}
+.plane-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.chip.ghost {
+  background: transparent;
+}
+.tool-options {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+.opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.opt input,
+.opt select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #fff;
+  width: 120px;
+}
+.opt.wide {
+  margin-top: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.opt.wide select {
+  width: 100%;
+  color: var(--ink);
+  font-size: 13px;
+}
+.item-name {
+  font-family: 'Cambria Math', 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 15px;
+  min-width: 14px;
+}
+
+/* ---------- canvas extras ---------- */
+.hit-curve {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+.hit-curve.off {
+  pointer-events: none;
+}
+.hit-face {
+  fill: transparent;
+  cursor: crosshair;
+}
+.hit-point.drag {
+  cursor: move;
+}
+.canvas.sheet .bg {
+  cursor: grab;
+}
+.canvas.sheet:not(.tool-select) .bg {
+  cursor: crosshair;
+}
+.angle-text {
+  font-family: 'Latin Modern Math', 'Cambria Math', 'Times New Roman', serif;
+  font-size: 14px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 4px;
+}

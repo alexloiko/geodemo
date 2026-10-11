@@ -1,0 +1,130 @@
+import type { ToolId } from '../scene/tools'
+
+const dot = (x: number, y: number, hollow = false) => (
+  <circle cx={x} cy={y} r={2.2} fill={hollow ? '#fff' : 'currentColor'} strokeWidth={hollow ? 1.6 : 0} />
+)
+
+/** Small line-art icons for the tool buttons. */
+export function ToolIcon({ tool }: { tool: ToolId }) {
+  return (
+    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      {ICONS[tool]}
+    </svg>
+  )
+}
+
+const ICONS: Record<ToolId, React.ReactNode> = {
+  select: <path d="M5 3l14 8-6 2-2 6z" />,
+  point: (
+    <>
+      <path d="M3 18L21 6" opacity={0.5} />
+      {dot(12, 12, true)}
+    </>
+  ),
+  segment: (
+    <>
+      <path d="M5 19L19 5" />
+      {dot(5, 19)}
+      {dot(19, 5)}
+    </>
+  ),
+  line: (
+    <>
+      <path d="M2 22L22 2" />
+      {dot(9, 15)}
+      {dot(15, 9)}
+    </>
+  ),
+  ray: (
+    <>
+      <path d="M5 19L22 2" />
+      {dot(5, 19)}
+      {dot(13, 11)}
+    </>
+  ),
+  polygon: <path d="M4 18L8 5l11 3 1 9z" fill="currentColor" fillOpacity={0.15} />,
+  midpoint: (
+    <>
+      <path d="M3 19L21 5" />
+      {dot(3, 19)}
+      {dot(21, 5)}
+      {dot(12, 12, true)}
+    </>
+  ),
+  perpendicular: (
+    <>
+      <path d="M2 19h20M11 19V3" />
+      <path d="M11 15h4v4" strokeWidth={1.3} />
+    </>
+  ),
+  parallel: <path d="M2 17L18 3M6 21L22 7" />,
+  perpBisector: (
+    <>
+      <path d="M3 16h18M12 3v18" />
+      {dot(3, 16)}
+      {dot(21, 16)}
+      <path d="M7 14v4M17 14v4" strokeWidth={1.3} />
+    </>
+  ),
+  angleBisector: (
+    <>
+      <path d="M3 20L21 20M3 20L15 4" />
+      <path d="M3 20L22 11" strokeDasharray="2 2.5" />
+    </>
+  ),
+  intersect: (
+    <>
+      <path d="M3 20L21 4M3 6l18 12" />
+      {dot(12, 12, true)}
+    </>
+  ),
+  circleCP: (
+    <>
+      <circle cx={12} cy={12} r={8} />
+      {dot(12, 12)}
+      {dot(20, 12)}
+    </>
+  ),
+  circle3: (
+    <>
+      <circle cx={12} cy={12} r={8} />
+      {dot(4.5, 9)}
+      {dot(17, 18.3)}
+      {dot(15.5, 4.8)}
+    </>
+  ),
+  circleCR: (
+    <>
+      <circle cx={12} cy={12} r={8} />
+      <path d="M12 12l5.6 5.6" />
+      {dot(12, 12)}
+    </>
+  ),
+  tangent: (
+    <>
+      <circle cx={10} cy={13} r={6} />
+      <path d="M2 4.5l20 2.5" />
+      {dot(22, 7)}
+    </>
+  ),
+  angle: (
+    <>
+      <path d="M3 20h18M3 20L16 5" />
+      <path d="M10 20a7 7 0 0 0-2.3-5.2" />
+    </>
+  ),
+  ratio: (
+    <>
+      <path d="M3 18h18" />
+      <path d="M3 15q6-7 12 0" />
+    </>
+  ),
+  ticks: (
+    <>
+      <path d="M3 12h18" />
+      <path d="M10 8v8M14 8v8" />
+    </>
+  ),
+  plane: <path d="M3 16l6-9h12l-6 9z" fill="currentColor" fillOpacity={0.2} />,
+  face: <path d="M5 8l7-4 7 4v8l-7 4-7-4z M5 8l7 4 7-4 M12 12v8" fill="currentColor" fillOpacity={0.1} />,
+}

@@ -1,10 +1,10 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
 import { detectLang, type Lang } from '../i18n'
-import type { Doc } from '../scene/model'
+import type { Doc, Item } from '../scene/model'
 import { useStore } from '../store/store'
 
 const KEY = 'geodemo:v1'
-const VERSION = 1
+const VERSION = 2
 
 interface Saved {
   v: number
@@ -14,12 +14,28 @@ interface Saved {
 
 export const encodeDoc = (doc: Doc): string => compressToEncodedURIComponent(JSON.stringify({ v: VERSION, doc }))
 
+/** v1 → v2: lines were `{a, b}`; now they carry a definition and an extent. */
+export function migrate(saved: { v: number; doc: Doc; lang?: Lang }): Saved | null {
+  if (saved.v === 1) {
+    const items = saved.doc.items.map((it) => {
+      const old = it as unknown as { type: string; a?: string; b?: string; def?: unknown }
+      if (old.type === 'line' && !old.def) {
+        const { a, b, ...rest } = old
+        return { ...rest, def: { kind: 'through', a, b }, extent: 'line' } as unknown as Item
+      }
+      return it
+    })
+    return { ...saved, v: VERSION, doc: { ...saved.doc, items } }
+  }
+  return saved.v === VERSION ? saved : null
+}
+
 function decode(s: string | null): Saved | null {
   if (!s) return null
   try {
     const raw = s.startsWith('{') ? s : decompressFromEncodedURIComponent(s)
     const parsed = raw ? (JSON.parse(raw) as Saved) : null
-    return parsed && parsed.v === VERSION && parsed.doc?.solid ? parsed : null
+    return parsed && parsed.doc && 'items' in parsed.doc ? migrate(parsed) : null
   } catch {
     return null
   }

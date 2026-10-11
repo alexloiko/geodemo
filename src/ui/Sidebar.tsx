@@ -3,15 +3,18 @@ import { type SolidKind, type SolidSpec, SOLID_KINDS, defaultSpec } from '../geo
 import { type DictKey, LANGS, useT } from '../i18n'
 import { shareUrl } from '../persist/persist'
 import { evaluate } from '../scene/evaluate'
-import { prettyLabel } from '../scene/labels'
-import { type Item, type ItemType, PALETTE, type PointRef } from '../scene/model'
 import { loadExample } from '../scene/example'
-import { type DisplayMode, type Tool, useStore } from '../store/store'
+import { prettyLabel } from '../scene/labels'
+import { type ItemType, PALETTE } from '../scene/model'
+import { makeNamer } from '../scene/names'
+import { GROUPS, TOOLS, type ToolGroup } from '../scene/tools'
+import { type DisplayMode, useStore } from '../store/store'
 import { ConstructionForm, type FormKind } from './forms'
+import { ToolIcon } from './ToolIcon'
 
-const TOOLS: Tool[] = ['select', 'point', 'segment', 'line', 'plane']
-const FORMS: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
-const TYPES: ItemType[] = ['point', 'segment', 'line', 'plane', 'face', 'ratio']
+const FORMS_3D: FormKind[] = ['pointOnEdge', 'segment', 'intersection', 'plane', 'face', 'ratio']
+const FORMS_2D: FormKind[] = ['segment', 'intersection', 'ratio']
+const TYPES: ItemType[] = ['point', 'segment', 'line', 'circle', 'polygon', 'angle', 'plane', 'face', 'mark', 'ratio']
 const MODES: DisplayMode[] = ['all', 'focus', 'selected']
 
 export function Sidebar() {
@@ -44,12 +47,11 @@ export function Sidebar() {
   )
 }
 
-function Section({ title, children, extra }: { title: string; children: React.ReactNode; extra?: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="sb-section">
       <div className="sb-title">
         <h2>{title}</h2>
-        {extra}
       </div>
       {children}
     </section>
@@ -66,27 +68,39 @@ function NumField({ label, value, onChange, min, max, step = 0.5 }: { label: str
   )
 }
 
+type FigureChoice = SolidKind | 'sheet'
+
 function FigurePanel() {
   const t = useT()
   const solid = useStore((s) => s.doc.solid)
   const hasItems = useStore((s) => s.doc.items.length > 0)
   const setSolid = useStore((s) => s.setSolid)
-  const [confirm, setConfirm] = useState<SolidSpec | null>(null)
+  const [confirm, setConfirm] = useState<{ spec: SolidSpec | null } | null>(null)
 
-  const change = (spec: SolidSpec) => {
-    const destructive = hasItems && (spec.kind !== solid.kind || ('n' in spec && 'n' in solid && spec.n !== solid.n))
-    if (destructive && (!confirm || JSON.stringify(confirm) !== JSON.stringify(spec))) return setConfirm(spec)
+  const change = (spec: SolidSpec | null) => {
+    const destructive =
+      hasItems && (!spec !== !solid || (spec && solid && (spec.kind !== solid.kind || ('n' in spec && 'n' in solid && spec.n !== solid.n))))
+    if (destructive && (!confirm || JSON.stringify(confirm.spec) !== JSON.stringify(spec))) return setConfirm({ spec })
     setConfirm(null)
     setSolid(spec)
   }
-  const upd = (patch: Record<string, number | string>) => change({ ...solid, ...patch } as SolidSpec)
+  const upd = (patch: Record<string, number | string>) => solid && change({ ...solid, ...patch } as SolidSpec)
   const num = (key: string, label: DictKey, min: number, max: number, step?: number) => (
     <NumField key={key} label={t(label)} value={(solid as unknown as Record<string, number>)[key]} min={min} max={max} step={step} onChange={(v) => upd({ [key]: v })} />
   )
+  const value: FigureChoice = solid?.kind ?? 'sheet'
 
   return (
     <Section title={t('figure')}>
-      <select className="kind-select" value={solid.kind} onChange={(e) => change(defaultSpec(e.target.value as SolidKind))}>
+      <select
+        className="kind-select"
+        value={value}
+        onChange={(e) => {
+          const v = e.target.value as FigureChoice
+          change(v === 'sheet' ? null : defaultSpec(v))
+        }}
+      >
+        <option value="sheet">{t('kind.sheet')}</option>
         {SOLID_KINDS.map((k) => (
           <option key={k} value={k}>
             {t(`kind.${k}` as DictKey)}
@@ -96,59 +110,141 @@ function FigurePanel() {
       {confirm && (
         <div className="warn">
           {t('changeFigureConfirm')}
-          <button className="btn small danger" onClick={() => change(confirm)}>
+          <button className="btn small danger" onClick={() => change(confirm.spec)}>
             OK
           </button>
         </div>
       )}
-      <div className="params">
-        {'n' in solid && num('n', 'param.n', 3, 8, 1)}
-        {(solid.kind === 'cube' || solid.kind === 'tetrahedron' || solid.kind === 'octahedron') && num('a', 'param.a', 2, 8)}
-        {(solid.kind === 'cuboid' || solid.kind === 'parallelepiped') && [num('a', 'param.a', 1, 9), num('b', 'param.b', 1, 9), num('c', 'param.c', 1, 9)]}
-        {(solid.kind === 'prism' || solid.kind === 'pyramid' || solid.kind === 'frustum') && [num('side', 'param.side', 1, 9), num('height', 'param.height', 1, 9)]}
-        {(solid.kind === 'prism' || solid.kind === 'parallelepiped') && num('shift', 'param.shift', -4, 4)}
-        {solid.kind === 'frustum' && num('top', 'param.top', 0.5, solid.side - 0.5)}
-        {solid.kind === 'pyramid' && (
-          <label className="num-field">
-            <span>{t('param.apex')}</span>
-            <select value={solid.apex} onChange={(e) => upd({ apex: e.target.value })}>
-              <option value="center">{t('apex.center')}</option>
-              <option value="vertex">{t('apex.vertex')}</option>
-            </select>
-          </label>
-        )}
-      </div>
+      {solid && (
+        <div className="params">
+          {'n' in solid && num('n', 'param.n', 3, 8, 1)}
+          {(solid.kind === 'cube' || solid.kind === 'tetrahedron' || solid.kind === 'octahedron') && num('a', 'param.a', 2, 8)}
+          {(solid.kind === 'cuboid' || solid.kind === 'parallelepiped') && [num('a', 'param.a', 1, 9), num('b', 'param.b', 1, 9), num('c', 'param.c', 1, 9)]}
+          {(solid.kind === 'prism' || solid.kind === 'pyramid' || solid.kind === 'frustum') && [num('side', 'param.side', 1, 9), num('height', 'param.height', 1, 9)]}
+          {(solid.kind === 'prism' || solid.kind === 'parallelepiped') && num('shift', 'param.shift', -4, 4)}
+          {solid.kind === 'frustum' && num('top', 'param.top', 0.5, solid.side - 0.5)}
+          {solid.kind === 'pyramid' && (
+            <label className="num-field">
+              <span>{t('param.apex')}</span>
+              <select value={solid.apex} onChange={(e) => upd({ apex: e.target.value })}>
+                <option value="center">{t('apex.center')}</option>
+                <option value="vertex">{t('apex.vertex')}</option>
+              </select>
+            </label>
+          )}
+        </div>
+      )}
     </Section>
   )
 }
 
 function ToolsPanel() {
   const t = useT()
-  const tool = useStore((s) => s.tool)
-  const setTool = useStore((s) => s.setTool)
-  const pending = useStore((s) => s.pending)
-  const doc = useStore((s) => s.doc)
+  const st = useStore()
+  const { tool, picks, doc, opts, message, planeChoice } = st
   const [form, setForm] = useState<FormKind | null>(null)
   const ev = useMemo(() => evaluate(doc), [doc])
+  const names = useMemo(() => makeNamer(doc, ev, t), [doc, ev, t])
+  const sheet = !doc.solid
+  const groups = GROUPS.filter((g) => !(sheet && g === 'solid'))
+
+  const pickName = (p: (typeof picks)[number]) =>
+    p.kind === 'point' ? names.point(p.ref) : p.kind === 'line' ? names.line(p.ref) : p.kind === 'circle' ? names.circle(p.ref) : names.face(p.face)
+
   return (
     <Section title={t('tools')}>
-      <div className="tools">
-        {TOOLS.map((k, i) => (
-          <button key={k} className={`tool ${tool === k ? 'on' : ''}`} onClick={() => setTool(k)} title={`${t(`tool.${k}` as DictKey)} (${i + 1})`}>
-            <ToolIcon tool={k} />
-            <span>{t(`tool.${k}` as DictKey)}</span>
-          </button>
-        ))}
+      {groups.map((g: ToolGroup) => (
+        <div key={g} className="tool-group">
+          <div className="group-label">{t(`group.${g}` as DictKey)}</div>
+          <div className="tools">
+            {TOOLS.filter((d) => d.group === g && !(sheet && d.solidOnly)).map((d) => (
+              <button key={d.id} className={`tool ${tool === d.id ? 'on' : ''}`} onClick={() => st.setTool(d.id)} title={t(`tool.${d.id}` as DictKey)}>
+                <ToolIcon tool={d.id} />
+                <span>{t(`tool.${d.id}` as DictKey)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="tool-status">
+        <p className="hint">{t(`hint.${tool}` as DictKey)}</p>
+        {picks.length > 0 && (
+          <p className="hint picked">
+            {t('picked')}: {picks.map(pickName).join(', ')}
+            {tool === 'polygon' && picks.length >= 3 && (
+              <button className="btn small primary inline" onClick={st.finishPolygon}>
+                {t('finishPolygon')}
+              </button>
+            )}
+          </p>
+        )}
+        {message && <p className={`hint ${message.startsWith('err') ? 'error' : 'note'}`}>{t(message)}</p>}
+        {planeChoice && (
+          <div className="plane-choice">
+            {planeChoice.options.map((p) => (
+              <button key={p} className="chip" onClick={() => st.choosePlane(p)}>
+                {names.plane(p)}
+              </button>
+            ))}
+            <button className="chip ghost" onClick={() => st.choosePlane(null)}>
+              {t('form.cancel')}
+            </button>
+          </div>
+        )}
       </div>
-      <p className="hint">{t(`hint.${tool}` as DictKey)}</p>
-      {pending.length > 0 && (
-        <p className="hint picked">
-          {t('picked')}: {pending.map((p) => prettyLabel(ev.labels.get(p) ?? '')).join(', ')}
-        </p>
+
+      {(tool === 'circleCR' || tool === 'ratio' || tool === 'ticks') && (
+        <div className="tool-options">
+          {tool === 'circleCR' && (
+            <label className="opt">
+              {t('opt.radius')}
+              <input type="number" min={0.1} step={0.5} value={opts.radius} onChange={(e) => st.setOpts({ radius: Number(e.target.value) || 1 })} />
+            </label>
+          )}
+          {tool === 'ratio' && (
+            <label className="opt">
+              {t('opt.ratioText')}
+              <input value={opts.ratioText} onChange={(e) => st.setOpts({ ratioText: e.target.value })} />
+            </label>
+          )}
+          {tool === 'ticks' && (
+            <div className="opt">
+              {t('opt.ticks')}
+              <div className="seg small">
+                {[1, 2, 3].map((n) => (
+                  <button key={n} className={opts.ticks === n ? 'on' : ''} onClick={() => st.setOpts({ ticks: n })}>
+                    {'|'.repeat(n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
+
+      {!sheet && (
+        <label className="opt wide">
+          {t('opt.workingPlane')}
+          <select value={opts.workingPlane} onChange={(e) => st.setOpts({ workingPlane: e.target.value })}>
+            <option value="auto">{t('plane.auto')}</option>
+            {ev.solid?.faces.map((_, i) => (
+              <option key={i} value={`f${i}`}>
+                {names.plane(`f${i}`)}
+              </option>
+            ))}
+            {[...ev.planes.keys()].map((id) => (
+              <option key={id} value={id}>
+                {names.plane(id)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       <div className="sub-title">{t('exact')}</div>
       <div className="form-buttons">
-        {FORMS.map((f) => (
+        {(sheet ? FORMS_2D : FORMS_3D).map((f) => (
           <button key={f} className={`chip ${form === f ? 'on' : ''}`} onClick={() => setForm(form === f ? null : f)}>
             {t(`form.${f}` as DictKey)}
           </button>
@@ -159,79 +255,6 @@ function ToolsPanel() {
   )
 }
 
-function ToolIcon({ tool }: { tool: Tool }) {
-  const common = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const }
-  switch (tool) {
-    case 'select':
-      return (
-        <svg {...common}>
-          <path d="M5 3l14 8-6 2-2 6z" />
-        </svg>
-      )
-    case 'point':
-      return (
-        <svg {...common}>
-          <path d="M3 18L21 6" />
-          <circle cx="12" cy="12" r="3" fill="#fff" />
-        </svg>
-      )
-    case 'segment':
-      return (
-        <svg {...common}>
-          <path d="M5 19L19 5" />
-          <circle cx="5" cy="19" r="2" fill="currentColor" />
-          <circle cx="19" cy="5" r="2" fill="currentColor" />
-        </svg>
-      )
-    case 'line':
-      return (
-        <svg {...common}>
-          <path d="M2 22L22 2" strokeDasharray="0" />
-          <circle cx="9" cy="15" r="2" fill="currentColor" />
-          <circle cx="15" cy="9" r="2" fill="currentColor" />
-        </svg>
-      )
-    case 'plane':
-      return (
-        <svg {...common}>
-          <path d="M3 16l6-9h12l-6 9z" fill="currentColor" fillOpacity={0.2} />
-        </svg>
-      )
-  }
-}
-
-function describe(it: Item, name: (r: PointRef) => string, t: ReturnType<typeof useT>, solidLabel: (i: number) => string, faceName: (f: number) => string): string {
-  switch (it.type) {
-    case 'point': {
-      const d = it.def
-      if (d.kind === 'onSegment') {
-        const m = Math.round(d.t * 1000) / 1000
-        const inside = m > 0 && m < 1
-        return `∈ ${name(d.a)}${name(d.b)}${inside ? ` · ${ratioOf(m)}` : ''}`
-      }
-      if (d.kind === 'intersection') return t('desc.intersection', { a: name(d.a1) + name(d.a2), b: name(d.b1) + name(d.b2) })
-      return t('desc.edgePlane', { e: solidLabel(d.a) + solidLabel(d.b) })
-    }
-    case 'segment':
-    case 'line':
-      return `${name(it.a)}${name(it.b)}`
-    case 'plane':
-      return `(${name(it.a)}${name(it.b)}${name(it.c)})`
-    case 'face':
-      return faceName(it.face)
-    case 'ratio':
-      return `${name(it.a)}${name(it.b)} = ${it.text}`
-  }
-}
-
-function ratioOf(t: number): string {
-  for (let den = 2; den <= 12; den++) {
-    const num = Math.round(t * den)
-    if (num > 0 && num < den && Math.abs(t - num / den) < 1e-6) return `${num}:${den - num}`
-  }
-  return `${Math.round(t * 100)}%`
-}
-
 function ElementsPanel() {
   const t = useT()
   const doc = useStore((s) => s.doc)
@@ -240,9 +263,7 @@ function ElementsPanel() {
   const updateItem = useStore((s) => s.updateItem)
   const removeItems = useStore((s) => s.removeItems)
   const ev = useMemo(() => evaluate(doc), [doc])
-  const name = (r: PointRef) => prettyLabel(ev.labels.get(r) ?? '?')
-  const solidLabel = (i: number) => prettyLabel(ev.solid.vertices[i]?.label ?? '?')
-  const faceName = (f: number) => (ev.solid.faces[f] ?? []).map(solidLabel).join('')
+  const names = useMemo(() => makeNamer(doc, ev, t), [doc, ev, t])
 
   if (!doc.items.length)
     return (
@@ -262,44 +283,57 @@ function ElementsPanel() {
             {items.map((it) => {
               const sel = selection.includes(it.id)
               const bad = ev.invalid.has(it.id)
+              const stop = (f: () => void) => (e: React.MouseEvent) => {
+                e.stopPropagation()
+                f()
+              }
               const cycle = () => updateItem(it.id, { color: PALETTE[(PALETTE.indexOf(it.color) + 1) % PALETTE.length] })
+              const short = names.nameOf(it)
               return (
                 <div key={it.id} className={`item ${sel ? 'sel' : ''} ${it.visible ? '' : 'off'}`} onClick={(e) => select(it.id, e.shiftKey || e.metaKey || e.ctrlKey)}>
-                  <button
-                    className="swatch"
-                    style={{ background: it.color }}
-                    title="color"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      cycle()
-                    }}
-                  />
-                  {it.type === 'point' ? (
+                  <button className="swatch" style={{ background: it.color }} title="color" onClick={stop(cycle)} />
+                  {it.type === 'point' && (
                     <input
                       className="item-label"
                       value={prettyLabel(it.label)}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => updateItem(it.id, { label: e.target.value.replace(/[₀-₉]/g, (c) => `_${c.charCodeAt(0) - 0x2080}`) })}
                     />
-                  ) : null}
-                  <span className="item-desc">
-                    {describe(it, name, t, solidLabel, faceName)}
+                  )}
+                  {short && <span className="item-name">{short}</span>}
+                  <span className="item-desc" title={names.describe(it)}>
+                    {names.describe(it)}
                     {bad && <em className="bad"> — {t('invalid')}</em>}
                   </span>
-                  {it.type === 'segment' && (
-                    <button className={`mini ${it.aux ? 'on' : ''}`} title={t('form.aux')} onClick={(e) => (e.stopPropagation(), updateItem(it.id, { aux: !it.aux }))}>
+                  {(it.type === 'segment' || it.type === 'line') && (
+                    <button className={`mini ${it.aux ? 'on' : ''}`} title={t('form.aux')} onClick={stop(() => updateItem(it.id, { aux: !it.aux }))}>
                       aux
                     </button>
                   )}
                   {it.type === 'plane' && (
-                    <button className={`mini ${it.extend ? 'on' : ''}`} title={t('form.extend')} onClick={(e) => (e.stopPropagation(), updateItem(it.id, { extend: !it.extend }))}>
+                    <button className={`mini ${it.extend ? 'on' : ''}`} title={t('form.extend')} onClick={stop(() => updateItem(it.id, { extend: !it.extend }))}>
                       ext
                     </button>
                   )}
-                  <button className="icon" title={it.visible ? t('hide') : t('show')} onClick={(e) => (e.stopPropagation(), updateItem(it.id, { visible: !it.visible }))}>
+                  {it.type === 'angle' && (
+                    <>
+                      <button className={`mini ${it.showValue ? 'on' : ''}`} title={t('showDegrees')} onClick={stop(() => updateItem(it.id, { showValue: !it.showValue }))}>
+                        °
+                      </button>
+                      <button className="mini" onClick={stop(() => updateItem(it.id, { arcs: (it.arcs % 3) + 1 }))}>
+                        {')'.repeat(it.arcs)}
+                      </button>
+                    </>
+                  )}
+                  {it.type === 'mark' && it.def.kind === 'ticks' && (
+                    <button className="mini" onClick={stop(() => it.def.kind === 'ticks' && updateItem(it.id, { def: { ...it.def, count: (it.def.count % 3) + 1 } }))}>
+                      {'|'.repeat(it.def.count)}
+                    </button>
+                  )}
+                  <button className="icon" title={it.visible ? t('hide') : t('show')} onClick={stop(() => updateItem(it.id, { visible: !it.visible }))}>
                     {it.visible ? <EyeIcon /> : <EyeOffIcon />}
                   </button>
-                  <button className="icon" title={t('delete')} onClick={(e) => (e.stopPropagation(), removeItems([it.id]))}>
+                  <button className="icon" title={t('delete')} onClick={stop(() => removeItems([it.id]))}>
                     ×
                   </button>
                 </div>
@@ -330,7 +364,9 @@ function DisplayPanel() {
   const mode = useStore((s) => s.mode)
   const setMode = useStore((s) => s.setMode)
   const showGrid = useStore((s) => s.showGrid)
+  const snapGrid = useStore((s) => s.snapGrid)
   const dashedHidden = useStore((s) => s.dashedHidden)
+  const sheet = useStore((s) => !s.doc.solid)
   const toggle = useStore((s) => s.toggle)
   return (
     <Section title={t('display')}>
@@ -346,10 +382,17 @@ function DisplayPanel() {
         <input type="checkbox" checked={showGrid} onChange={() => toggle('showGrid')} />
         {t('grid')}
       </label>
-      <label className="check">
-        <input type="checkbox" checked={dashedHidden} onChange={() => toggle('dashedHidden')} />
-        {t('hiddenEdges')}
-      </label>
+      {sheet ? (
+        <label className="check">
+          <input type="checkbox" checked={snapGrid} onChange={() => toggle('snapGrid')} />
+          {t('snapGrid')}
+        </label>
+      ) : (
+        <label className="check">
+          <input type="checkbox" checked={dashedHidden} onChange={() => toggle('dashedHidden')} />
+          {t('hiddenEdges')}
+        </label>
+      )}
     </Section>
   )
 }

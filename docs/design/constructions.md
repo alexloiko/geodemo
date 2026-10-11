@@ -1,6 +1,6 @@
 # Design: construction tools, circles and the 2D sheet
 
-Status: proposal (2026-10-11)
+Status: implemented in v0.2 (2026-10-11)
 
 ## Why
 
@@ -55,6 +55,8 @@ New / extended items:
 ```ts
 PointDef +=
   | { kind: 'free'; pos: Vec3; plane?: PlaneRef }          // click on the sheet or on a face
+  | { kind: 'onLine'; line: LineRef; t: number }            // on a constructed line
+  | { kind: 'tangency'; circle; point; index }              // created with tangents
   | { kind: 'midpoint'; a: PointRef; b: PointRef }
   | { kind: 'onCircle'; circle: CircleRef; angle: number }
   | { kind: 'meet'; o1: LineRef | CircleRef; o2: LineRef | CircleRef; index: 0 | 1 }
@@ -77,8 +79,9 @@ CircleItem { type: 'circle'; def:
 PolygonItem { type: 'polygon'; pts: PointRef[] }            // fill + sides (sides are LineRefs)
 AngleItem   { type: 'angle'; a; vertex; b; arcs: 1 | 2 | 3; showValue: boolean }
 MarkItem    { type: 'mark'; def:
-  | { kind: 'right'; a; vertex; b }                         // right-angle square
-  | { kind: 'ticks'; a; b; count: 1 | 2 | 3 } }             // equal-segment ticks
+  | { kind: 'right'; at: PointRef; l1: LineRef; l2: LineRef; p1?; p2? }  // right-angle square
+  | { kind: 'ticks'; a; b; count: 1 | 2 | 3 }               // equal-segment ticks
+  | { kind: 'equalAngles'; a; vertex; b } }                 // arc with two ticks (bisector)
 ```
 
 Constructions add their marks automatically (perpendicular → right-angle square at the foot;

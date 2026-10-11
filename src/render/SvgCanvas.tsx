@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { type Circle3, angleOnCircle, pointOnCircle, sampleCircle } from '../geometry/circle'
+import { type Line3, angleDeg, pointAt } from '../geometry/lines'
+import type { Plane } from '../geometry/plane'
 import { boundingRadius, edgesOf, faceNormal, halfSpaces, solidCenter } from '../geometry/polyhedron'
-import { type Vec3, add, dot, scale, sub } from '../geometry/vec'
-import { splitByVisibility } from '../geometry/visibility'
-import { evaluate } from '../scene/evaluate'
-import { depsOf, type Item, type PointItem, type PointRef, parseVertexRef } from '../scene/model'
-import { makePointOnSegment } from '../scene/build'
+import { type Vec3, add, cross, dot, len, lerp, normalize, scale, sub } from '../geometry/vec'
+import { isHidden, splitByVisibility } from '../geometry/visibility'
+import { type EvLine, evaluate, resolveLine, resolvePlane } from '../scene/evaluate'
+import { type Item, type LineRef, type PointItem, type PointRef, depsOf, pairRef, parseVertexRef } from '../scene/model'
+import { nextSlot, toolById } from '../scene/tools'
 import { useStore } from '../store/store'
-import { makeProjector } from './camera'
+import { SHEET_PROJECTOR, makeProjector } from './camera'
 import { Label } from './Label'
 
 type P2 = [number, number]
@@ -15,10 +18,11 @@ type Look = 'normal' | 'dim' | 'hidden'
 const GRID = 28
 const SELECT_HALO = '#ffd54a'
 const PENDING = '#f08c00'
+const DRAGGABLE = ['onSegment', 'onLine', 'onCircle', 'free']
 
-/** Snap t to simple fractions (1/2, 1/3, 2/5 …) when close enough; clamp to [0, 1] unless on a line. */
-function snapT(t: number, line = false): number {
-  if (line && (t < 0 || t > 1)) return t
+/** Snap t to simple fractions (1/2, 1/3, 2/5 …) when close enough; clamp to [0, 1] when bounded. */
+function snapT(t: number, bounded: boolean): number {
+  if (!bounded && (t < 0 || t > 1)) return t
   let best = t
   let bestD = 0.02
   for (let den = 2; den <= 6; den++)
@@ -29,10 +33,10 @@ function snapT(t: number, line = false): number {
         best = num / den
       }
     }
-  return Math.min(1, Math.max(0, best))
+  return bounded ? Math.min(1, Math.max(0, best)) : best
 }
 
-/** Parameter of the projection of m onto screen segment a–b. */
+/** Parameter of the projection of m onto screen line a→b (t = 0 at a, 1 at b). */
 function tOnScreen(m: P2, a: P2, b: P2): number {
   const dx = b[0] - a[0]
   const dy = b[1] - a[1]
@@ -40,18 +44,18 @@ function tOnScreen(m: P2, a: P2, b: P2): number {
   return ((m[0] - a[0]) * dx + (m[1] - a[1]) * dy) / l2
 }
 
+const ptsAttr = (pts: P2[]) => pts.map((p) => `${p[0]},${p[1]}`).join(' ')
+
+type Drag = { kind: 'view'; x: number; y: number; moved: boolean } | { kind: 'point'; item: PointItem; moved: boolean }
+
 export function SvgCanvas() {
   const st = useStore()
-  const { doc, camera, selection, mode, tool, pending, showGrid, dashedHidden } = st
+  const { doc, camera, selection, mode, tool, picks, showGrid, dashedHidden, snapGrid } = st
   const wrap = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const [size, setSize] = useState({ w: 800, h: 600 })
-  const [hover, setHover] = useState<{ a: PointRef; b: PointRef; t: number; line: boolean } | null>(null)
-  const drag = useRef<
-    | { kind: 'rotate'; x: number; y: number; moved: boolean }
-    | { kind: 'point'; id: string; a: PointRef; b: PointRef; line: boolean; moved: boolean }
-    | null
-  >(null)
+  const [hover, setHover] = useState<Vec3 | null>(null)
+  const drag = useRef<Drag | null>(null)
 
   useEffect(() => {
     const el = wrap.current
@@ -62,25 +66,61 @@ export function SvgCanvas() {
   }, [])
 
   const ev = useMemo(() => evaluate(doc), [doc])
-  const pr = useMemo(() => makeProjector(camera), [camera])
   const solid = ev.solid
-  const R = useMemo(() => boundingRadius(solid), [solid])
-  const hs = useMemo(() => halfSpaces(solid), [solid])
-  const center3 = useMemo(() => solidCenter(solid), [solid])
+  const sheet = !solid
+  const pr = useMemo(() => (sheet ? SHEET_PROJECTOR : makeProjector(camera)), [sheet, camera])
+  const R = useMemo(() => (solid ? boundingRadius(solid) : 10), [solid])
+  const hs = useMemo(() => (solid ? halfSpaces(solid) : []), [solid])
+  const center3: Vec3 = useMemo(() => (solid ? solidCenter(solid) : [0, 0, 0]), [solid])
 
-  const k = (camera.zoom * Math.min(size.w, size.h) * 0.34) / R
+  // ---- world ↔ screen ----------------------------------------------------
+  const k = sheet ? GRID * camera.zoom : (camera.zoom * Math.min(size.w, size.h) * 0.34) / R
   const c2 = pr.project(center3)
+  const ox = size.w / 2 + camera.pan[0]
+  const oy = size.h / 2 + camera.pan[1]
   const S = (p: Vec3): P2 => {
     const q = pr.project(p)
-    return [size.w / 2 + (q[0] - c2[0]) * k, size.h / 2 - (q[1] - c2[1]) * k]
+    return [ox + (q[0] - c2[0]) * k, oy - (q[1] - c2[1]) * k]
   }
-  const centerS: P2 = [size.w / 2, size.h / 2]
+  const centerS = S(center3)
+  /** Screen point → world point on a plane (parallel projection is affine, so solve 2×2). */
+  const unproject = (m: P2, pl: Plane): Vec3 => {
+    const n = pl.n
+    const ref: Vec3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
+    const u = normalize(cross(n, ref))
+    const v = cross(n, u)
+    const O = scale(n, pl.d)
+    const s0 = S(O)
+    const su = S(add(O, u))
+    const sv = S(add(O, v))
+    const a = [su[0] - s0[0], su[1] - s0[1]]
+    const b = [sv[0] - s0[0], sv[1] - s0[1]]
+    const det = a[0] * b[1] - a[1] * b[0] || 1e-12
+    const rx = m[0] - s0[0]
+    const ry = m[1] - s0[1]
+    const x = (rx * b[1] - ry * b[0]) / det
+    const y = (a[0] * ry - a[1] * rx) / det
+    return add(O, add(scale(u, x), scale(v, y)))
+  }
+  const sheetPoint = (m: P2): Vec3 => {
+    let x = (m[0] - ox) / k
+    let y = -(m[1] - oy) / k
+    if (snapGrid) {
+      const rx = Math.round(x)
+      const ry = Math.round(y)
+      if (Math.hypot(rx - x, ry - y) < 0.25) [x, y] = [rx, ry]
+    }
+    return [x, y, 0]
+  }
+
+  // ---- visibility --------------------------------------------------------
+  const pieces = (a: Vec3, b: Vec3) => (solid ? splitByVisibility(hs, pr.toViewer, a, b, R) : [{ a, b, hidden: false }])
+  const hiddenPt = (p: Vec3) => (solid ? isHidden(hs, pr.toViewer, p, R) : false)
 
   // ---- display filtering -------------------------------------------------
   const relevant = useMemo(() => {
     const set = new Set(selection)
     for (const it of doc.items) if (set.has(it.id)) for (const d of depsOf(it)) set.add(d)
-    // Section points belong to their plane.
     for (const it of doc.items)
       if (it.type === 'point' && it.def.kind === 'edgePlane' && selection.includes(it.def.plane)) set.add(it.id)
     return set
@@ -89,98 +129,160 @@ export function SvgCanvas() {
   const look = (it: Item): Look => {
     if (!it.visible) return 'hidden'
     if (!filtering || relevant.has(it.id)) return 'normal'
-    if (it.type === 'point' && doc.items.some((o) => relevant.has(o.id) && dependsOnRef(o, it.id))) return 'normal'
     return mode === 'focus' ? 'dim' : 'hidden'
   }
   const opacityOf = (l: Look) => (l === 'dim' ? 0.18 : 1)
+
+  // ---- tool state --------------------------------------------------------
+  const slot = tool === 'select' ? null : nextSlot(toolById(tool), picks)
+  const wantsPoint = slot === 'point'
+  const wantsLine = slot === 'line' || slot === 'curve'
+  const wantsCircle = slot === 'circle' || slot === 'curve'
+  const pickedRefs = new Set(picks.map((p) => (p.kind === 'face' ? `f${p.face}` : p.ref)))
 
   // ---- interaction -------------------------------------------------------
   const local = (e: React.PointerEvent | React.MouseEvent): P2 => {
     const r = svgRef.current!.getBoundingClientRect()
     return [e.clientX - r.left, e.clientY - r.top]
   }
+  const additive = (e: React.PointerEvent) => e.shiftKey || e.metaKey || e.ctrlKey
 
   const onBgDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
-    drag.current = { kind: 'rotate', x: e.clientX, y: e.clientY, moved: false }
+    drag.current = { kind: 'view', x: e.clientX, y: e.clientY, moved: false }
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
   }
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current
     if (!d) return
-    if (d.kind === 'rotate') {
+    if (d.kind === 'view') {
       const dx = e.clientX - d.x
       const dy = e.clientY - d.y
       if (!d.moved && Math.hypot(dx, dy) < 3) return
       d.moved = true
       d.x = e.clientX
       d.y = e.clientY
-      st.setCamera({
-        yaw: camera.yaw + dx * 0.4,
-        pitch: Math.max(-85, Math.min(85, camera.pitch + dy * 0.4)),
-      })
-    } else {
-      const pa = ev.points.get(d.a)
-      const pb = ev.points.get(d.b)
-      if (!pa || !pb) return
-      if (!d.moved) st.checkpoint()
-      d.moved = true
-      const t = snapT(tOnScreen(local(e), S(pa), S(pb)), d.line)
-      const it = doc.items.find((i) => i.id === d.id) as PointItem
-      st.updateItem(d.id, { def: { ...it.def, t } } as Partial<Item>, true)
+      if (sheet || e.shiftKey) st.setCamera({ pan: [camera.pan[0] + dx, camera.pan[1] + dy] })
+      else st.setCamera({ yaw: camera.yaw + dx * 0.4, pitch: Math.max(-85, Math.min(85, camera.pitch + dy * 0.4)) })
+      return
     }
+    const def = dragDef(d.item, local(e))
+    if (!def) return
+    if (!d.moved) st.checkpoint()
+    d.moved = true
+    st.updateItem(d.item.id, { def } as Partial<Item>, true)
   }
-  const onUp = () => {
+  const onUp = (e: React.PointerEvent) => {
     const d = drag.current
     drag.current = null
-    if (d?.kind === 'rotate' && !d.moved) st.select(null)
+    if (d?.kind !== 'view' || d.moved) return
+    if (tool === 'select') st.select(null)
+    else st.hit({ kind: 'empty', pos: sheet ? sheetPoint(local(e)) : null })
   }
   const onWheel = (e: React.WheelEvent) => {
-    st.setCamera({ zoom: Math.max(0.3, Math.min(4, camera.zoom * Math.exp(-e.deltaY * 0.0015))) })
+    st.setCamera({ zoom: Math.max(0.3, Math.min(5, camera.zoom * Math.exp(-e.deltaY * 0.0015))) })
   }
 
-  const clickPoint = (ref: PointRef, e: React.PointerEvent) => {
-    e.stopPropagation()
-    if (tool === 'select') {
-      st.select(ref, e.shiftKey || e.metaKey || e.ctrlKey)
-      const it = doc.items.find((i) => i.id === ref)
-      if (it?.type === 'point' && it.def.kind === 'onSegment') {
-        drag.current = { kind: 'point', id: it.id, a: it.def.a, b: it.def.b, line: !!it.def.line, moved: false }
-        ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  /** Angle on a circle closest to a screen point. */
+  const angleAt = (c: Circle3, m: P2): number => {
+    const samples = sampleCircle(c, 180)
+    let best = 0
+    let bestD = Infinity
+    samples.forEach((p, i) => {
+      const s = S(p)
+      const dd = Math.hypot(s[0] - m[0], s[1] - m[1])
+      if (dd < bestD) {
+        bestD = dd
+        best = i
       }
-    } else if (tool !== 'point') st.pick(ref)
+    })
+    return angleOnCircle(c, samples[best])
   }
-  const clickItem = (id: string, e: React.PointerEvent) => {
-    if (tool !== 'select') return
+
+  /** New definition of a dragged point for the mouse position. */
+  const dragDef = (it: PointItem, m: P2): PointItem['def'] | null => {
+    const d = it.def
+    switch (d.kind) {
+      case 'onSegment': {
+        const [pa, pb] = [ev.points.get(d.a), ev.points.get(d.b)]
+        return pa && pb ? { ...d, t: snapT(tOnScreen(m, S(pa), S(pb)), !d.line) } : null
+      }
+      case 'onLine': {
+        const l = resolveLine(ev, d.line)
+        return l ? { ...d, t: tOnScreen(m, S(l.p), S(pointAt(l, 1))) } : null
+      }
+      case 'onCircle': {
+        const c = ev.circles.get(d.circle)
+        return c ? { ...d, angle: angleAt(c, m) } : null
+      }
+      case 'free': {
+        if (!d.plane || d.plane === 'sheet') return { ...d, pos: sheetPoint(m) }
+        const pl = resolvePlane(ev, d.plane)
+        return pl ? { ...d, pos: unproject(m, pl) } : null
+      }
+      default:
+        return null
+    }
+  }
+
+  const onPointDown = (ref: PointRef, e: React.PointerEvent) => {
     e.stopPropagation()
-    st.select(id, e.shiftKey || e.metaKey || e.ctrlKey)
+    if (tool !== 'select') return st.hit({ kind: 'point', ref })
+    st.select(ref, additive(e))
+    const it = doc.items.find((i) => i.id === ref)
+    if (it?.type === 'point' && DRAGGABLE.includes(it.def.kind)) {
+      drag.current = { kind: 'point', item: it, moved: false }
+      ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    }
   }
-  /** Point-tool handlers for anything a point can sit on: edges, segments, section sides, lines. */
-  const segHover = (a: PointRef, b: PointRef, line = false) => {
+
+  /** Hit area of something line-like. `select` is the item selected by the Select tool. */
+  const lineHit = (a: Vec3, b: Vec3, ref: LineRef, bounded: boolean, select: string | null, key: string) => {
+    const active = tool === 'select' ? !!select : wantsPoint || wantsLine
     const tAt = (e: React.PointerEvent) => {
-      const pa = ev.points.get(a)!
-      const pb = ev.points.get(b)!
-      return snapT(tOnScreen(local(e), S(pa), S(pb)), line)
+      const l = resolveLine(ev, ref)!
+      const t = tOnScreen(local(e), S(l.p), S(pointAt(l, 1)))
+      return l.a && l.b ? snapT(t, bounded) : t
     }
-    return {
-      onPointerMove: (e: React.PointerEvent) => {
-        if (tool !== 'point' || drag.current) return
-        setHover({ a, b, t: tAt(e), line })
-      },
-      onPointerLeave: () => setHover(null),
-      onPointerDown: (e: React.PointerEvent) => {
-        if (tool !== 'point') return
-        e.stopPropagation()
-        const t = tAt(e)
-        if (t === 0 || t === 1 || (!line && (t < 0 || t > 1))) return
-        st.addItems([makePointOnSegment(doc, a, b, t, undefined, line)])
-      },
-    }
+    const [x1, y1] = S(a)
+    const [x2, y2] = S(b)
+    return (
+      <line
+        key={key}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        className={active ? 'hit-line' : 'hit-line off'}
+        onPointerMove={(e) => {
+          if (!wantsPoint || drag.current) return
+          const t = tAt(e)
+          setHover(bounded && (t <= 0 || t >= 1) ? null : pointAt(resolveLine(ev, ref)!, t))
+        }}
+        onPointerLeave={() => setHover(null)}
+        onPointerDown={(e) => {
+          if (tool === 'select') {
+            if (!select) return
+            e.stopPropagation()
+            return st.select(select, additive(e))
+          }
+          if (!wantsPoint && !wantsLine) return
+          e.stopPropagation()
+          st.hit({ kind: 'line', ref, t: tAt(e), bounded })
+        }}
+      />
+    )
+  }
+
+  const onFaceDown = (f: number, e: React.PointerEvent) => {
+    const pl = resolvePlane(ev, `f${f}`)
+    if (!pl) return
+    e.stopPropagation()
+    st.hit({ kind: 'face', face: f, pos: unproject(local(e), pl) })
   }
 
   // ---- geometry → SVG ----------------------------------------------------
-  const pieces = (a: Vec3, b: Vec3) => splitByVisibility(hs, pr.toViewer, a, b, R)
-  const line = (a: Vec3, b: Vec3, props: React.SVGProps<SVGLineElement>, key: string) => {
+  const svgLine = (a: Vec3, b: Vec3, props: React.SVGProps<SVGLineElement>, key: string) => {
     const [x1, y1] = S(a)
     const [x2, y2] = S(b)
     return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} {...props} />
@@ -190,7 +292,7 @@ export function SvgCanvas() {
     pieces(a, b).map((pc, i) =>
       pc.hidden && !dashedHidden
         ? null
-        : line(
+        : svgLine(
             pc.a,
             pc.b,
             {
@@ -203,40 +305,100 @@ export function SvgCanvas() {
             `${key}-${i}`,
           ),
     )
-  const poly = (pts: Vec3[]) => pts.map((p) => S(p).join(',')).join(' ')
+  /** Closed curve split into visible / hidden runs. */
+  const drawCurve = (pts: Vec3[], stroke: string, width: number, key: string, op = 1) => {
+    const all = [...pts, pts[0]]
+    const runs: { hidden: boolean; pts: Vec3[] }[] = []
+    for (let i = 0; i < all.length - 1; i++) {
+      const h = hiddenPt(lerp(all[i], all[i + 1], 0.5))
+      const last = runs[runs.length - 1]
+      if (last && last.hidden === h) last.pts.push(all[i + 1])
+      else runs.push({ hidden: h, pts: [all[i], all[i + 1]] })
+    }
+    return runs.map((r, i) =>
+      r.hidden && !dashedHidden ? null : (
+        <polyline
+          key={`${key}-${i}`}
+          points={ptsAttr(r.pts.map(S))}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={r.hidden ? width * 0.85 : width}
+          strokeDasharray={dashedFor(r.hidden)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={op}
+        />
+      ),
+    )
+  }
+  const poly = (pts: Vec3[]) => ptsAttr(pts.map(S))
 
-  const faceVisible = solid.faces.map((_, i) => dot(faceNormal(solid, i), pr.toViewer) > 1e-9)
-  const edges = edgesOf(solid)
+  /** Visible extent of a segment / line / ray. */
+  const lineExtent = (l: EvLine): [Vec3, Vec3] => {
+    if (l.extent === 'segment') return [l.p, pointAt(l, 1)]
+    const dir = normalize(l.d)
+    let t0: number
+    let t1: number
+    if (sheet) {
+      // Long enough to leave the viewport, measured from the screen centre's foot on the line.
+      const big = Math.hypot(size.w, size.h) / k
+      const c = sheetPoint([size.w / 2, size.h / 2])
+      const mid = dot(sub(c, l.p), dir)
+      ;[t0, t1] = [mid - big, mid + big]
+    } else {
+      const w = sub(l.p, center3)
+      const bq = dot(w, dir)
+      const off = len(sub(w, scale(dir, bq)))
+      const r = Math.max(R * 1.5, off + R * 0.8)
+      const s = Math.sqrt(Math.max(0, r * r - off * off))
+      ;[t0, t1] = [-bq - s, -bq + s]
+    }
+    // Always include the defining points.
+    const tb = len(l.d)
+    t0 = Math.min(t0, 0)
+    t1 = Math.max(t1, tb)
+    if (l.extent === 'ray') t0 = 0
+    return [add(l.p, scale(dir, t0)), add(l.p, scale(dir, t1))]
+  }
+
+  const faceVisible = solid ? solid.faces.map((_, i) => dot(faceNormal(solid, i), pr.toViewer) > 1e-9) : []
   const figureOp = filtering && mode === 'focus' ? 0.55 : 1
 
   const fills: React.ReactNode[] = []
+  const faceHits: React.ReactNode[] = []
   const strokes: React.ReactNode[] = []
   const underlays: React.ReactNode[] = []
   const hits: React.ReactNode[] = []
-  const arcs: React.ReactNode[] = []
+  const marks: React.ReactNode[] = []
 
-  // Figure edges.
-  for (const e of edges) {
-    const hidden = !faceVisible[e.faces[0]] && !faceVisible[e.faces[1]]
-    if (hidden && !dashedHidden) continue
-    strokes.push(
-      line(
-        solid.vertices[e.a].pos,
-        solid.vertices[e.b].pos,
-        {
-          stroke: '#111',
-          strokeWidth: hidden ? 1.6 : 2,
-          strokeDasharray: dashedFor(hidden),
-          strokeLinecap: 'round',
-          opacity: figureOp,
-        },
-        `e${e.a}-${e.b}`,
-      ),
-    )
-    if (tool === 'point') {
-      const [a, b] = [`v${e.a}`, `v${e.b}`]
-      hits.push(line(solid.vertices[e.a].pos, solid.vertices[e.b].pos, { className: 'hit-line', ...segHover(a, b) }, `he${e.a}-${e.b}`))
+  const halo = (a: Vec3, b: Vec3, key: string, color = SELECT_HALO) =>
+    underlays.push(svgLine(a, b, { stroke: color, strokeWidth: 9, strokeLinecap: 'round', opacity: 0.75 }, key))
+
+  // Solid edges and faces.
+  if (solid) {
+    for (const e of edgesOf(solid)) {
+      const hidden = !faceVisible[e.faces[0]] && !faceVisible[e.faces[1]]
+      const [a, b] = [solid.vertices[e.a].pos, solid.vertices[e.b].pos]
+      const ref = pairRef(`v${e.a}`, `v${e.b}`)
+      if (pickedRefs.has(ref)) halo(a, b, `pk${ref}`, PENDING)
+      if (!(hidden && !dashedHidden))
+        strokes.push(
+          svgLine(
+            a,
+            b,
+            { stroke: '#111', strokeWidth: hidden ? 1.6 : 2, strokeDasharray: dashedFor(hidden), strokeLinecap: 'round', opacity: figureOp },
+            `e${e.a}-${e.b}`,
+          ),
+        )
+      hits.push(lineHit(a, b, ref, true, null, `he${e.a}-${e.b}`))
     }
+    if (wantsPoint || slot === 'face')
+      solid.faces.forEach((f, i) => {
+        if (!faceVisible[i]) return
+        faceHits.push(
+          <polygon key={`fh${i}`} points={poly(f.map((v) => solid.vertices[v].pos))} className="hit-face" onPointerDown={(e) => onFaceDown(i, e)} />,
+        )
+      })
   }
 
   for (const it of doc.items) {
@@ -244,9 +406,16 @@ export function SvgCanvas() {
     if (l === 'hidden' || ev.invalid.has(it.id)) continue
     const op = opacityOf(l)
     const sel = selection.includes(it.id)
+    const pend = pickedRefs.has(it.id)
+    const clickSelect = (e: React.PointerEvent) => {
+      if (tool !== 'select') return
+      e.stopPropagation()
+      st.select(it.id, additive(e))
+    }
+    const selectable = tool === 'select' ? 'clickable' : undefined
     switch (it.type) {
       case 'face': {
-        const pts = solid.faces[it.face]?.map((i) => solid.vertices[i].pos)
+        const pts = solid?.faces[it.face]?.map((i) => solid.vertices[i].pos)
         if (!pts) break
         fills.push(
           <polygon
@@ -256,8 +425,8 @@ export function SvgCanvas() {
             fillOpacity={0.32 * op}
             stroke={sel ? SELECT_HALO : 'none'}
             strokeWidth={sel ? 4 : 0}
-            onPointerDown={(e) => clickItem(it.id, e)}
-            className={tool === 'select' ? 'clickable' : undefined}
+            onPointerDown={clickSelect}
+            className={selectable}
           />,
         )
         break
@@ -266,72 +435,110 @@ export function SvgCanvas() {
         const pl = ev.planes.get(it.id)
         if (!pl) break
         if (it.extend && pl.extension.length >= 3)
-          fills.push(
-            <polygon key={`${it.id}-x`} points={poly(pl.extension)} fill={it.color} fillOpacity={0.14 * op} />,
-          )
+          fills.push(<polygon key={`${it.id}-x`} points={poly(pl.extension)} fill={it.color} fillOpacity={0.14 * op} />)
         const sec = pl.section.map((v) => v.pos)
-        if (sec.length >= 3) {
-          fills.push(
-            <polygon
-              key={it.id}
-              points={poly(sec)}
-              fill={it.color}
-              fillOpacity={0.3 * op}
-              onPointerDown={(e) => clickItem(it.id, e)}
-              className={tool === 'select' ? 'clickable' : undefined}
-            />,
-          )
-          sec.forEach((p, i) => {
-            const q = sec[(i + 1) % sec.length]
-            if (sel) underlays.push(line(p, q, { stroke: SELECT_HALO, strokeWidth: 9, strokeLinecap: 'round' }, `${it.id}-u${i}`))
-            strokes.push(...drawPieces(p, q, it.color, 2.4, `${it.id}-${i}`, op))
-            const ra = pl.refs[i]
-            const rb = pl.refs[(i + 1) % sec.length]
-            if (ra && rb)
-              hits.push(
-                line(
-                  p,
-                  q,
-                  {
-                    className: tool === 'select' || tool === 'point' ? 'hit-line' : 'hit-line off',
-                    onPointerDown: (e: React.PointerEvent) => (tool === 'point' ? undefined : clickItem(it.id, e)),
-                    ...(tool === 'point' ? segHover(ra, rb) : {}),
-                  },
-                  `h${it.id}-${i}`,
-                ),
-              )
-          })
-        }
+        if (sec.length < 3) break
+        fills.push(<polygon key={it.id} points={poly(sec)} fill={it.color} fillOpacity={0.3 * op} onPointerDown={clickSelect} className={selectable} />)
+        sec.forEach((p, i) => {
+          const q = sec[(i + 1) % sec.length]
+          if (sel) halo(p, q, `${it.id}-u${i}`)
+          strokes.push(...drawPieces(p, q, it.color, 2.4, `${it.id}-${i}`, op))
+          const [ra, rb] = [pl.refs[i], pl.refs[(i + 1) % sec.length]]
+          if (ra && rb) hits.push(lineHit(p, q, pairRef(ra, rb), true, it.id, `h${it.id}-${i}`))
+        })
+        break
+      }
+      case 'polygon': {
+        const pts = it.pts.map((r) => ev.points.get(r)!)
+        fills.push(<polygon key={it.id} points={poly(pts)} fill={it.color} fillOpacity={0.18 * op} onPointerDown={clickSelect} className={selectable} />)
+        pts.forEach((p, i) => {
+          const q = pts[(i + 1) % pts.length]
+          if (sel) halo(p, q, `${it.id}-u${i}`)
+          strokes.push(...drawPieces(p, q, it.color, 2.2, `${it.id}-${i}`, op))
+          hits.push(lineHit(p, q, pairRef(it.pts[i], it.pts[(i + 1) % pts.length]), true, it.id, `h${it.id}-${i}`))
+        })
         break
       }
       case 'segment':
       case 'line': {
-        let a = ev.points.get(it.a)!
-        let b = ev.points.get(it.b)!
-        if (it.type === 'line') [a, b] = extendLine(a, b, center3, R * 1.5)
-        const aux = it.type === 'line' || it.aux
-        if (sel) underlays.push(line(a, b, { stroke: SELECT_HALO, strokeWidth: 9, strokeLinecap: 'round' }, `${it.id}-u`))
-        strokes.push(...drawPieces(a, b, it.color, aux ? 1.6 : 2.4, it.id, op))
+        const ln = ev.lines.get(it.id)!
+        const [a, b] = lineExtent(ln)
+        if (sel) halo(a, b, `${it.id}-u`)
+        if (pend) halo(a, b, `${it.id}-p`, PENDING)
+        strokes.push(...drawPieces(a, b, it.color, it.aux ? 1.6 : it.type === 'line' ? 1.8 : 2.4, it.id, op))
+        hits.push(lineHit(a, b, it.id, it.type === 'segment', it.id, `h${it.id}`))
+        break
+      }
+      case 'circle': {
+        const c = ev.circles.get(it.id)!
+        const pts = sampleCircle(c, 120)
+        if (sel || pend)
+          underlays.push(<polygon key={`${it.id}-u`} points={poly(pts)} fill="none" stroke={pend ? PENDING : SELECT_HALO} strokeWidth={8} opacity={0.6} />)
+        strokes.push(...drawCurve(pts, it.color, 2, it.id, op))
+        const active = tool === 'select' || wantsPoint || wantsCircle
         hits.push(
-          line(
-            a,
-            b,
-            {
-              className: tool === 'select' || tool === 'point' ? 'hit-line' : 'hit-line off',
-              onPointerDown: (e: React.PointerEvent) => (tool === 'point' ? undefined : clickItem(it.id, e)),
-              ...(tool === 'point' ? segHover(it.a, it.b, it.type === 'line') : {}),
-            },
-            `h${it.id}`,
-          ),
+          <polygon
+            key={`h${it.id}`}
+            points={poly(pts)}
+            className={active ? 'hit-curve' : 'hit-curve off'}
+            onPointerMove={(e) => {
+              if (!wantsPoint || drag.current) return
+              setHover(pointOnCircle(c, angleAt(c, local(e))))
+            }}
+            onPointerLeave={() => setHover(null)}
+            onPointerDown={(e) => {
+              if (tool === 'select') {
+                e.stopPropagation()
+                return st.select(it.id, additive(e))
+              }
+              if (!wantsPoint && !wantsCircle) return
+              e.stopPropagation()
+              st.hit({ kind: 'circle', ref: it.id, angle: angleAt(c, local(e)) })
+            }}
+          />,
+        )
+        break
+      }
+      case 'angle': {
+        const [a, o, b] = [ev.points.get(it.a)!, ev.points.get(it.vertex)!, ev.points.get(it.b)!]
+        marks.push(
+          <g key={it.id} opacity={op} onPointerDown={clickSelect} className={selectable}>
+            {angleMark(a, o, b, it.arcs, it.color, sel, it.showValue)}
+          </g>,
+        )
+        break
+      }
+      case 'mark': {
+        const d = it.def
+        let node: React.ReactNode = null
+        if (d.kind === 'right') {
+          const at = ev.points.get(d.at)
+          const l1 = resolveLine(ev, d.l1)
+          const l2 = resolveLine(ev, d.l2)
+          if (at && l1 && l2) node = rightMark(at, l1, l2, it.color, d.p1, d.p2)
+        } else if (d.kind === 'ticks') {
+          const [a, b] = [ev.points.get(d.a), ev.points.get(d.b)]
+          if (a && b) node = ticksMark(S(a), S(b), d.count, it.color)
+        } else {
+          const [a, o, b] = [ev.points.get(d.a), ev.points.get(d.vertex), ev.points.get(d.b)]
+          if (a && o && b) node = angleMark(a, o, b, 1, it.color, false, false, true)
+        }
+        marks.push(
+          <g key={it.id} opacity={op} onPointerDown={clickSelect} className={selectable}>
+            {sel && (
+              <g stroke={SELECT_HALO} strokeWidth={7} opacity={0.7}>
+                {node}
+              </g>
+            )}
+            {node}
+          </g>,
         )
         break
       }
       case 'ratio': {
         const a = S(ev.points.get(it.a)!)
         const b = S(ev.points.get(it.b)!)
-        arcs.push(
-          <RatioArc key={it.id} a={a} b={b} away={centerS} color={it.color} text={it.text} opacity={op} selected={sel} onDown={(e) => clickItem(it.id, e)} />,
-        )
+        marks.push(<RatioArc key={it.id} a={a} b={b} away={centerS} color={it.color} text={it.text} opacity={op} selected={sel} onDown={clickSelect} />)
         break
       }
     }
@@ -341,9 +548,11 @@ export function SvgCanvas() {
   const pointNodes: React.ReactNode[] = []
   const labelNodes: React.ReactNode[] = []
   const pointRefs: { ref: PointRef; item?: PointItem }[] = [
-    ...solid.vertices.map((_, i) => ({ ref: `v${i}` })),
+    ...(solid ? solid.vertices.map((_, i) => ({ ref: `v${i}` })) : []),
     ...doc.items.filter((i): i is PointItem => i.type === 'point').map((i) => ({ ref: i.id, item: i })),
   ]
+  const labelCenter: P2 = sheet ? sheetLabelAnchor() : centerS
+  const pointsActive = tool === 'select' || wantsPoint
   for (const { ref, item } of pointRefs) {
     const p = ev.points.get(ref)
     if (!p) continue
@@ -352,52 +561,34 @@ export function SvgCanvas() {
     const op = item ? opacityOf(l) : figureOp
     const [x, y] = S(p)
     const sel = selection.includes(ref)
-    const pend = pending.includes(ref)
-    const isVertex = parseVertexRef(ref) !== null
-    const hollow = !isVertex || sel || pend
+    const pend = pickedRefs.has(ref)
+    const hollow = parseVertexRef(ref) === null || sel || pend
     const color = item?.color ?? (sel ? '#2f45d8' : '#111')
+    const draggable = tool === 'select' && !!item && DRAGGABLE.includes(item.def.kind)
     pointNodes.push(
       <g key={ref} opacity={op}>
         {(sel || pend) && <circle cx={x} cy={y} r={10} fill={pend ? PENDING : SELECT_HALO} opacity={0.55} />}
-        <circle
-          cx={x}
-          cy={y}
-          r={hollow ? 4.6 : 3.2}
-          fill={hollow ? '#fff' : color}
-          stroke={color}
-          strokeWidth={hollow ? 2.2 : 0}
-        />
+        <circle cx={x} cy={y} r={hollow ? 4.6 : 3.2} fill={hollow ? '#fff' : color} stroke={color} strokeWidth={hollow ? 2.2 : 0} />
         <circle
           cx={x}
           cy={y}
           r={11}
-          className={tool === 'point' ? 'hit-point off' : 'hit-point'}
-          onPointerDown={(e) => clickPoint(ref, e)}
+          className={`hit-point${pointsActive ? '' : ' off'}${draggable ? ' drag' : ''}`}
+          onPointerDown={(e) => onPointDown(ref, e)}
         />
       </g>,
     )
-    const label = ev.labels.get(ref) ?? ''
-    const dir = labelDir([x, y], centerS)
-    labelNodes.push(<Label key={`L${ref}`} x={x + dir[0] * 17} y={y + dir[1] * 17} text={label} opacity={op} />)
+    const dir = labelDir([x, y], labelCenter)
+    labelNodes.push(<Label key={`L${ref}`} x={x + dir[0] * 17} y={y + dir[1] * 17} text={ev.labels.get(ref) ?? ''} opacity={op} />)
   }
 
-  // Hover preview for the point tool.
-  let preview: React.ReactNode = null
-  if (hover && tool === 'point') {
-    const pa = ev.points.get(hover.a)
-    const pb = ev.points.get(hover.b)
-    if (pa && pb && hover.t !== 0 && hover.t !== 1 && (hover.line || (hover.t > 0 && hover.t < 1))) {
-      const [x, y] = S(add(pa, scale(sub(pb, pa), hover.t)))
-      preview = (
-        <g pointerEvents="none">
-          <circle cx={x} cy={y} r={5} fill="#fff" stroke={PENDING} strokeWidth={2} />
-          <text x={x + 10} y={y - 10} className="hover-t">
-            {fraction(hover.t)}
-          </text>
-        </g>
-      )
-    }
-  }
+  const preview =
+    hover && wantsPoint ? <circle cx={S(hover)[0]} cy={S(hover)[1]} r={5} fill="#fff" stroke={PENDING} strokeWidth={2} pointerEvents="none" /> : null
+
+  // Grid: on the sheet it moves with the content (one cell = one unit).
+  const cell = sheet ? GRID * camera.zoom : GRID
+  const gx = sheet ? ox % cell : 0
+  const gy = sheet ? oy % cell : 0
 
   return (
     <div className="canvas-wrap" ref={wrap}>
@@ -405,64 +596,120 @@ export function SvgCanvas() {
         ref={svgRef}
         width={size.w}
         height={size.h}
-        className={`canvas tool-${tool}`}
+        className={`canvas tool-${tool} ${sheet ? 'sheet' : 'solid'}`}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onWheel={onWheel}
+        onPointerLeave={() => setHover(null)}
       >
         <defs>
-          <pattern id="grid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
-            <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#c9d3de" strokeWidth={1} />
+          <pattern id="grid" x={gx} y={gy} width={cell} height={cell} patternUnits="userSpaceOnUse">
+            <path d={`M ${cell} 0 L 0 0 0 ${cell}`} fill="none" stroke="#c9d3de" strokeWidth={1} />
           </pattern>
         </defs>
         <rect width={size.w} height={size.h} fill={showGrid ? 'url(#grid)' : '#fff'} onPointerDown={onBgDown} className="bg" />
         <g>{fills}</g>
+        <g>{faceHits}</g>
         <g>{underlays}</g>
         <g pointerEvents="none">{strokes}</g>
         <g>{hits}</g>
-        <g>{arcs}</g>
+        <g>{marks}</g>
         <g>{pointNodes}</g>
         <g pointerEvents="none">{labelNodes}</g>
         {preview}
       </svg>
     </div>
   )
+
+  // ---- marks (hoisted helpers using the current projection) ---------------
+
+  /** Arc(s) of angle a-o-b drawn in its own plane; a right angle gets a square. */
+  function angleMark(a: Vec3, o: Vec3, b: Vec3, arcs: number, color: string, selected: boolean, showValue: boolean, ticks = false) {
+    const ua = normalize(sub(a, o))
+    const ub = normalize(sub(b, o))
+    const phi = (angleDeg(a, o, b) * Math.PI) / 180
+    const w0 = sub(ub, scale(ua, dot(ua, ub)))
+    if (len(w0) < 1e-9) return null
+    const w = normalize(w0)
+    const r0 = 24 / k
+    const at = (r: number, th: number) => add(o, scale(add(scale(ua, Math.cos(th)), scale(w, Math.sin(th))), r))
+    const out: React.ReactNode[] = []
+    if (selected) out.push(<circle key="sel" cx={S(o)[0]} cy={S(o)[1]} r={30} fill={SELECT_HALO} opacity={0.35} />)
+    if (Math.abs(phi - Math.PI / 2) < 1e-6 && !ticks) {
+      const s = 14 / k
+      const pts = [add(o, scale(ua, s)), add(o, add(scale(ua, s), scale(ub, s))), add(o, scale(ub, s))].map(S)
+      out.push(<polyline key="sq" points={ptsAttr(pts)} fill="none" stroke={color} strokeWidth={1.8} />)
+    } else {
+      for (let i = 0; i < arcs; i++) {
+        const r = r0 + (i * 5) / k
+        const pts: P2[] = []
+        for (let j = 0; j <= 24; j++) pts.push(S(at(r, (phi * j) / 24)))
+        out.push(<polyline key={`a${i}`} points={ptsAttr(pts)} fill="none" stroke={color} strokeWidth={1.8} />)
+      }
+      if (ticks)
+        for (const f of [0.25, 0.75]) {
+          const p1 = S(at(r0 - 5 / k, phi * f))
+          const p2 = S(at(r0 + 5 / k, phi * f))
+          out.push(<line key={`t${f}`} x1={p1[0]} y1={p1[1]} x2={p2[0]} y2={p2[1]} stroke={color} strokeWidth={1.8} />)
+        }
+    }
+    if (showValue) {
+      const pos = S(at(r0 + 22 / k, phi / 2))
+      out.push(
+        <text key="v" x={pos[0]} y={pos[1]} className="angle-text" fill={color}>
+          {Math.round(((phi * 180) / Math.PI) * 10) / 10}°
+        </text>,
+      )
+    }
+    return out
+  }
+
+  /** Right-angle square at `at`, sides along l1 / l2 (towards p1 / p2 when given). */
+  function rightMark(at: Vec3, l1: Line3, l2: Line3, color: string, p1?: PointRef, p2?: PointRef) {
+    const towards = (l: Line3, p?: PointRef) => {
+      const d = normalize(l.d)
+      const q = p ? ev.points.get(p) : undefined
+      return q && dot(sub(q, at), d) < 0 ? scale(d, -1) : d
+    }
+    const s = 13 / k
+    const d1 = scale(towards(l1, p1), s)
+    const d2 = scale(towards(l2, p2), s)
+    const pts = [add(at, d1), add(at, add(d1, d2)), add(at, d2)].map(S)
+    return <polyline points={ptsAttr(pts)} fill="none" stroke={color} strokeWidth={1.6} />
+  }
+
+  /** On the sheet labels are pushed away from the centroid of all points. */
+  function sheetLabelAnchor(): P2 {
+    const pts = [...ev.points.values()].map(S)
+    if (!pts.length) return [ox, oy]
+    return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length]
+  }
 }
 
-function dependsOnRef(it: Item, ref: string) {
-  return depsOf(it).includes(ref)
+function ticksMark(a: P2, b: P2, count: number, color: string) {
+  const mx = (a[0] + b[0]) / 2
+  const my = (a[1] + b[1]) / 2
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const l = Math.hypot(dx, dy) || 1
+  const [ux, uy] = [dx / l, dy / l]
+  const [nx, ny] = [-uy, ux]
+  const out: React.ReactNode[] = []
+  for (let i = 0; i < count; i++) {
+    const off = (i - (count - 1) / 2) * 5
+    const cx = mx + ux * off
+    const cy = my + uy * off
+    out.push(<line key={i} x1={cx - nx * 6} y1={cy - ny * 6} x2={cx + nx * 6} y2={cy + ny * 6} stroke={color} strokeWidth={1.8} />)
+  }
+  return out
 }
 
-/** Unit screen direction from the figure centre towards the point. */
+/** Unit screen direction from a centre towards the point. */
 function labelDir(p: P2, c: P2): P2 {
   const dx = p[0] - c[0]
   const dy = p[1] - c[1]
   const l = Math.hypot(dx, dy)
   return l < 1 ? [0.7, -0.7] : [dx / l, dy / l]
-}
-
-/** Clip the infinite line through a, b to a sphere of radius r around c. */
-function extendLine(a: Vec3, b: Vec3, c: Vec3, r: number): [Vec3, Vec3] {
-  const d = sub(b, a)
-  const dd = dot(d, d)
-  const w = sub(a, c)
-  const bq = dot(w, d)
-  const disc = bq * bq - dd * (dot(w, w) - r * r)
-  let t0 = 0
-  let t1 = 1
-  if (disc > 0) {
-    const s = Math.sqrt(disc)
-    t0 = Math.min(0, (-bq - s) / dd)
-    t1 = Math.max(1, (-bq + s) / dd)
-  }
-  return [add(a, scale(d, t0)), add(a, scale(d, t1))]
-}
-
-function fraction(t: number): string {
-  for (let den = 2; den <= 6; den++)
-    for (let num = 1; num < den; num++)
-      if (Math.abs(t - num / den) < 1e-9) return `${num}:${den - num}`
-  return `${Math.round(t * 100)}%`
 }
 
 function RatioArc(props: {
@@ -488,9 +735,7 @@ function RatioArc(props: {
     ny = -ny
   }
   const h = Math.max(7, Math.min(20, l * 0.16))
-  const cx = mx + nx * h * 2
-  const cy = my + ny * h * 2
-  const d = `M ${a[0]} ${a[1]} Q ${cx} ${cy} ${b[0]} ${b[1]}`
+  const d = `M ${a[0]} ${a[1]} Q ${mx + nx * h * 2} ${my + ny * h * 2} ${b[0]} ${b[1]}`
   return (
     <g opacity={opacity} onPointerDown={onDown} className="clickable">
       {selected && <path d={d} fill="none" stroke={SELECT_HALO} strokeWidth={8} />}

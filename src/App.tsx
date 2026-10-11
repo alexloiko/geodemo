@@ -4,7 +4,17 @@ import { type Tool, useStore } from './store/store'
 import { Sidebar } from './ui/Sidebar'
 import { ViewControls } from './ui/ViewControls'
 
-const TOOL_KEYS: Record<string, Tool> = { '1': 'select', '2': 'point', '3': 'segment', '4': 'line', '5': 'plane' }
+const TOOL_KEYS: Record<string, Tool> = {
+  '1': 'select',
+  '2': 'point',
+  '3': 'segment',
+  '4': 'line',
+  '5': 'polygon',
+  '6': 'perpendicular',
+  '7': 'parallel',
+  '8': 'circleCP',
+  '9': 'intersect',
+}
 
 export default function App() {
   const lang = useStore((s) => s.lang)
@@ -26,9 +36,11 @@ export default function App() {
         e.preventDefault()
         st.redo()
       } else if (e.key === 'Escape') {
-        if (st.pending.length) useStore.setState({ pending: [] })
+        if (st.picks.length || st.planeChoice) useStore.setState({ picks: [], planeChoice: null, message: null })
         else if (st.tool !== 'select') st.setTool('select')
         else st.select(null)
+      } else if (e.key === 'Enter') {
+        st.finishPolygon()
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const ids = st.selection.filter((id) => st.doc.items.some((i) => i.id === id))
         if (ids.length) st.removeItems(ids)

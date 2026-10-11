@@ -11,6 +11,13 @@
   All / Focus / Only selected; undo/redo.
 - EN / UK interface; persistence in URL and localStorage.
 
+## Stage 1.5 — constructions and 2D sheet (done in v0.2)
+
+2D sheet mode; perpendicular, parallel, perpendicular bisector, angle bisector, midpoint,
+intersections of lines and circles, circles (3 ways), tangents, polygons, angles with degrees,
+automatic marks; the same tools inside a working plane of a solid. See
+[design/constructions.md](design/constructions.md).
+
 ## Stage 2 — bodies of revolution
 
 Cylinder, cone, truncated cone, sphere; silhouettes; elliptic sections; points on circles and
@@ -24,7 +31,7 @@ export to PNG/SVG, a library of prepared tasks (JSON), free text notes on the ca
 ## Stage 4 — measurements and constructions
 
 Lengths, angles between lines / line and plane / planes, distances, areas and volumes;
-parallel and perpendicular through a point; midpoint, centroid, foot of perpendicular.
+perpendicular to a plane, centroid, inscribed circle helpers.
 
 ## Stage 5 — reach
 

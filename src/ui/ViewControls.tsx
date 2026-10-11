@@ -6,6 +6,19 @@ export function ViewControls() {
   const t = useT()
   const camera = useStore((s) => s.camera)
   const setCamera = useStore((s) => s.setCamera)
+  const sheet = useStore((s) => !s.doc.solid)
+  if (sheet)
+    return (
+      <div className="view-controls">
+        <button className="btn" onClick={() => setCamera({ zoom: 1, pan: [0, 0] })}>
+          {t('resetView')}
+        </button>
+        <div className="zoom">
+          <button className="btn" onClick={() => setCamera({ zoom: Math.min(5, camera.zoom * 1.2) })}>+</button>
+          <button className="btn" onClick={() => setCamera({ zoom: Math.max(0.3, camera.zoom / 1.2) })}>−</button>
+        </div>
+      </div>
+    )
   return (
     <div className="view-controls">
       <div className="seg">
@@ -18,7 +31,7 @@ export function ViewControls() {
       </div>
       <button
         className="btn"
-        onClick={() => setCamera(camera.projection === 'oblique' ? TEXTBOOK_CAMERA : ORTHO_CAMERA)}
+        onClick={() => setCamera({ ...(camera.projection === 'oblique' ? TEXTBOOK_CAMERA : ORTHO_CAMERA), pan: [0, 0] })}
       >
         {t('resetView')}
       </button>

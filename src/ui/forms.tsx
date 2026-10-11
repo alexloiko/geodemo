@@ -221,9 +221,9 @@ function FaceForm({ onClose }: { onClose: () => void }) {
   return (
     <div className="form">
       <select value={face} onChange={(e) => setFace(Number(e.target.value))}>
-        {ev.solid.faces.map((f, i) => (
+        {ev.solid?.faces.map((f, i) => (
           <option key={i} value={i}>
-            {f.map((v) => prettyLabel(ev.solid.vertices[v].label)).join('')}
+            {f.map((v) => prettyLabel(ev.solid!.vertices[v].label)).join('')}
           </option>
         ))}
       </select>
